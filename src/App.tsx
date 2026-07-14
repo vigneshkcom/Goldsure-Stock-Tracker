@@ -423,6 +423,7 @@ export default function App() {
   const [lossCharged, setLossCharged] = useState(false);
   const [lossAmount, setLossAmount] = useState("");
   const [lossNotes, setLossNotes] = useState("");
+  const [logoDataUri, setLogoDataUri] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeKind, setComposeKind] = useState<"pickup" | "report">("pickup");
   const [composeBodyInner, setComposeBodyInner] = useState("");
@@ -563,6 +564,30 @@ export default function App() {
     void loadRemoteData();
   }, [localOnly]);
 
+  // Load the logo once and keep it as a data URI so emails and PDFs embed the
+  // image bytes directly instead of linking back to this internal app.
+  useEffect(() => {
+    let active = true;
+    fetch(pickupConfig.logoPath)
+      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error("no logo"))))
+      .then(
+        (blob) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(new Error("read failed"));
+            reader.readAsDataURL(blob);
+          }),
+      )
+      .then((uri) => {
+        if (active) setLogoDataUri(uri);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!productId && activeProducts[0]) setProductId(activeProducts[0].id);
     if (!postProductId && activeProducts[0]) setPostProductId(activeProducts[0].id);
@@ -591,9 +616,12 @@ export default function App() {
 
   useEffect(() => {
     if ((!selectedElectricianId || !technicians.some((holder) => holder.id === selectedElectricianId)) && technicians[0]) {
-      setSelectedElectricianId(technicians[0].id);
+      const withStock = technicians.find((holder) =>
+        activeProducts.some((product) => getBalance(goodBalanceMap, holder.id, product.id) !== 0),
+      );
+      setSelectedElectricianId((withStock ?? technicians[0]).id);
     }
-  }, [selectedElectricianId, technicians]);
+  }, [selectedElectricianId, technicians, activeProducts, goodBalanceMap]);
 
   useEffect(() => {
     if ((!giveWarehouseId || !warehouses.some((holder) => holder.id === giveWarehouseId)) && warehouses[0]) {
@@ -1046,7 +1074,8 @@ export default function App() {
   }
 
   // Build the slip data (recipients + inner HTML) from the current selection.
-  function buildSlipForSelected() {
+  // Emails omit the letterhead logo (the signature carries it); print includes it.
+  function buildSlipForSelected(withLogo = false) {
     const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
     if (!electrician) return null;
     const lines: PickupLine[] = activeProducts
@@ -1067,7 +1096,7 @@ export default function App() {
       recipientPhone: electrician.phone ?? "",
       lines,
       notes: pickupNotes,
-      logoUrl: `${window.location.origin}${pickupConfig.logoPath}`,
+      logoUrl: withLogo ? logoDataUri : undefined,
     });
 
     const cc = [...pickupConfig.freight.cc];
@@ -1167,7 +1196,7 @@ export default function App() {
       received,
       installsByWeek,
       lost,
-      logoUrl: `${window.location.origin}${pickupConfig.logoPath}`,
+      logoUrl: undefined,
     });
 
     return { electrician, reportInner, monthLabel };
@@ -1195,7 +1224,7 @@ export default function App() {
 
   function handlePrintPickupSlip() {
     setError(null);
-    const slip = buildSlipForSelected();
+    const slip = buildSlipForSelected(true);
     if (!slip) {
       setError("Enter a quantity for at least one product first.");
       return;
@@ -1225,8 +1254,7 @@ export default function App() {
       return;
     }
 
-    const logoUrl = `${window.location.origin}${pickupConfig.logoPath}`;
-    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml(logoUrl)}`);
+    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml(logoDataUri)}`);
 
     setSendingSlip(true);
     setError(null);
@@ -3137,9 +3165,19 @@ function ElectriciansView({
   onSendPickupSlip: () => void;
   onEmailReport: () => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
   const warehouseName = (id: string | null) => warehouses.find((holder) => holder.id === id)?.name ?? "";
+  const holderHasStock = (holder: Holder) =>
+    activeProducts.some(
+      (product) =>
+        getBalance(goodBalanceMap, holder.id, product.id) !== 0 || getBalance(faultyBalanceMap, holder.id, product.id) !== 0,
+    );
+  const withStock = technicians.filter(holderHasStock);
+  const visibleTechnicians = showAll
+    ? technicians
+    : technicians.filter((holder) => holderHasStock(holder) || holder.id === selectedElectricianId);
 
   if (!technicians.length) {
     return (
@@ -3220,11 +3258,14 @@ function ElectriciansView({
           <div className="panel-header">
             <div>
               <h2>Electricians</h2>
-              <p>{technicians.length} on the team</p>
+              <p>{showAll ? `${technicians.length} on the team` : `${withStock.length} with stock`}</p>
             </div>
+            <button className="secondary-button" type="button" onClick={() => setShowAll(!showAll)}>
+              {showAll ? "Only with stock" : "Show all"}
+            </button>
           </div>
           <div className="job-list">
-            {technicians.map((holder) => {
+            {visibleTechnicians.map((holder) => {
               const onHand = activeProducts.reduce(
                 (total, product) => total + getBalance(goodBalanceMap, holder.id, product.id),
                 0,
@@ -3244,6 +3285,11 @@ function ElectriciansView({
                 </button>
               );
             })}
+            {visibleTechnicians.length === 0 ? (
+              <p className="muted" style={{ padding: "4px 2px" }}>
+                No electricians are holding stock. Use “Show all” to pick one and give them stock.
+              </p>
+            ) : null}
           </div>
         </section>
 

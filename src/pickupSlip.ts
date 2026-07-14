@@ -61,7 +61,7 @@ export function messageToHtml(message: string): string {
 export function buildSignatureHtml(logoUrl?: string): string {
   const { signature } = pickupConfig;
   const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" style="height:66px;width:auto;display:block;" />`
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" height="58" style="height:58px;width:auto;display:block;" />`
     : `<div style="font-size:22px;font-weight:bold;color:#111;">Goldsure</div>`;
   return `
   <table style="border-collapse:collapse;margin-top:30px;font-family:Arial,Helvetica,sans-serif;">
@@ -84,7 +84,7 @@ export function buildPickupSlipInner(input: PickupSlipInput): string {
   const { company, freight } = pickupConfig;
   const rows = input.lines.length;
   const logo = input.logoUrl
-    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" style="height:56px;width:auto;margin-bottom:14px;" />`
+    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" height="48" style="height:48px;width:auto;margin-bottom:14px;" />`
     : "";
 
   const productRows = input.lines
@@ -172,7 +172,7 @@ export type StockReportInput = {
 // Monthly stock statement emailed to an electrician.
 export function buildStockReportInner(input: StockReportInput): string {
   const logo = input.logoUrl
-    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" style="height:56px;width:auto;margin-bottom:14px;" />`
+    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" height="48" style="height:48px;width:auto;margin-bottom:14px;" />`
     : "";
 
   const remainingRows = input.remaining
