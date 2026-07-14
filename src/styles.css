@@ -884,6 +884,12 @@ textarea:focus {
   font: inherit;
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 a.tracking-chip {
   text-decoration: underline;
 }

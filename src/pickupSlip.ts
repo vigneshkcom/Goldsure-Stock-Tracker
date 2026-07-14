@@ -158,5 +158,92 @@ export function buildPickupSlipHtml(input: PickupSlipInput): string {
   return wrapDocument(buildPickupSlipInner(input));
 }
 
+export type StockReportInput = {
+  electricianName: string;
+  generatedDate: string;
+  monthLabel: string;
+  remaining: { product: string; good: number; faulty: number }[];
+  received: { date: string; type: string; product: string; from: string; qty: number }[];
+  installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
+  lost: { date: string; product: string; qty: number; charged: string }[];
+  logoUrl?: string;
+};
+
+// Monthly stock statement emailed to an electrician.
+export function buildStockReportInner(input: StockReportInput): string {
+  const logo = input.logoUrl
+    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" style="height:56px;width:auto;margin-bottom:14px;" />`
+    : "";
+
+  const remainingRows = input.remaining
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.good.toLocaleString()}</td><td style="${cell};text-align:center;">${row.faulty.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
+  const receivedRows = input.received.length
+    ? input.received
+        .map(
+          (row) =>
+            `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.type)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell}">${escapeHtml(row.from) || "&mdash;"}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="5" style="${cell}">Nothing received this month.</td></tr>`;
+
+  const installRows = input.installsByWeek.length
+    ? input.installsByWeek
+        .flatMap((week) =>
+          week.items.map(
+            (item, index) =>
+              `<tr><td style="${cell}">${index === 0 ? escapeHtml(week.week) : ""}</td><td style="${cell}">${escapeHtml(item.product)}</td><td style="${cell};text-align:center;">${item.qty.toLocaleString()}</td></tr>`,
+          ),
+        )
+        .join("")
+    : `<tr><td colspan="3" style="${cell}">Nothing installed this month.</td></tr>`;
+
+  const lostRows = input.lost.length
+    ? input.lost
+        .map(
+          (row) =>
+            `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td><td style="${cell}">${escapeHtml(row.charged)}</td></tr>`,
+        )
+        .join("")
+    : "";
+
+  return `
+    ${logo}
+    <h1 style="font-size:1.4rem;margin:0 0 4px;">Stock Report &mdash; ${escapeHtml(input.electricianName)}</h1>
+    <p style="margin:0 0 18px;color:#444;">${escapeHtml(input.monthLabel)} &middot; generated ${escapeHtml(input.generatedDate)}</p>
+
+    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Stock On Hand Now</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><th style="${head}">Product</th><th style="${head}">On hand (good)</th><th style="${head}">Faulty held</th></tr>
+      ${remainingRows}
+    </table>
+
+    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Received This Month</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><th style="${head}">Date</th><th style="${head}">Type</th><th style="${head}">Product</th><th style="${head}">From</th><th style="${head}">Qty</th></tr>
+      ${receivedRows}
+    </table>
+
+    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Installed This Month</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><th style="${head}">Week ending</th><th style="${head}">Product</th><th style="${head}">Installed</th></tr>
+      ${installRows}
+    </table>
+
+    ${
+      input.lost.length
+        ? `<h2 style="font-size:1.05rem;margin:18px 0 6px;">Stock Lost This Month</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><th style="${head}">Date</th><th style="${head}">Product</th><th style="${head}">Qty</th><th style="${head}">Charged</th></tr>
+      ${lostRows}
+    </table>`
+        : ""
+    }`;
+}
+
 const cell = "border:1px solid #333;padding:6px 8px;";
 const head = "border:1px solid #333;padding:6px 8px;text-align:center;font-weight:bold;background:#f3f4f6;";

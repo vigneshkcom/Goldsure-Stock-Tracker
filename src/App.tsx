@@ -32,6 +32,7 @@ import {
   buildPickupSlipHtml,
   buildPickupSlipInner,
   buildSignatureHtml,
+  buildStockReportInner,
   formatSlipDate,
   messageToHtml,
   wrapDocument,
@@ -423,6 +424,8 @@ export default function App() {
   const [lossAmount, setLossAmount] = useState("");
   const [lossNotes, setLossNotes] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeKind, setComposeKind] = useState<"pickup" | "report">("pickup");
+  const [composeBodyInner, setComposeBodyInner] = useState("");
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeCc, setComposeCc] = useState("");
@@ -498,6 +501,24 @@ export default function App() {
     [data.movements],
   );
   const negativeBalances = goodBalances.filter((row) => row.quantity < 0);
+
+  const lossSummary = useMemo(() => {
+    const byHolder = new Map<string, { lost: number; charged: number; unchargedUnits: number }>();
+    data.movements
+      .filter((movement) => movement.is_loss)
+      .forEach((movement) => {
+        const id = movement.from_holder_id ?? "";
+        const current = byHolder.get(id) ?? { lost: 0, charged: 0, unchargedUnits: 0 };
+        current.lost += movement.quantity;
+        if (movement.charged) current.charged += movement.charge_amount ?? 0;
+        else current.unchargedUnits += movement.quantity;
+        byHolder.set(id, current);
+      });
+    return Array.from(byHolder.entries())
+      .map(([id, value]) => ({ holder: data.holders.find((holder) => holder.id === id), ...value }))
+      .filter((row): row is { holder: Holder; lost: number; charged: number; unchargedUnits: number } => Boolean(row.holder))
+      .sort((a, b) => b.lost - a.lost);
+  }, [data.holders, data.movements]);
 
   const filteredMovements = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -1067,6 +1088,111 @@ export default function App() {
     )}.\n\nCould you please arrange the items below for pickup? Let me know if you need anything further.\n\nThanks`;
   }
 
+  // Open the review/edit modal for a pickup slip instead of sending straight away.
+  function openComposePickupSlip() {
+    setError(null);
+    setMessage(null);
+    const slip = buildSlipForSelected();
+    if (!slip) {
+      setError("Enter a quantity for at least one product first.");
+      return;
+    }
+    setComposeKind("pickup");
+    setComposeBodyInner(slip.slipInner);
+    setComposeTo(slip.to.join(", "));
+    setComposeSubject(slip.subject);
+    setComposeCc(slip.cc.join(", "));
+    setComposeMessage(defaultSlipMessage(slip.electrician.name));
+    setComposeOpen(true);
+  }
+
+  // Build a monthly stock statement for the selected electrician.
+  function buildReportForSelected() {
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    if (!electrician) return null;
+    const monthPrefix = today().slice(0, 7);
+    const inMonth = (date: string) => date.startsWith(monthPrefix);
+    const holderName = (id: string | null) => data.holders.find((holder) => holder.id === id)?.name ?? "";
+    const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
+
+    const remaining = activeProducts.map((product) => ({
+      product: product.name,
+      good: getBalance(goodBalanceMap, electrician.id, product.id),
+      faulty: getBalance(faultyBalanceMap, electrician.id, product.id),
+    }));
+
+    const received = data.movements
+      .filter((m) => m.to_holder_id === electrician.id && getMovementCondition(m) === "good" && inMonth(m.movement_date))
+      .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
+      .map((m) => ({
+        date: formatDate(m.movement_date),
+        type: movementLabels[m.movement_type],
+        product: productName(m.product_id),
+        from: holderName(m.from_holder_id),
+        qty: m.quantity,
+      }));
+
+    const weekGroups = new Map<string, Map<string, number>>();
+    data.movements
+      .filter((m) => m.from_holder_id === electrician.id && m.movement_type === "install" && inMonth(m.movement_date))
+      .forEach((m) => {
+        const week = weekEndingSunday(m.movement_date);
+        const byProduct = weekGroups.get(week) ?? new Map<string, number>();
+        byProduct.set(m.product_id, (byProduct.get(m.product_id) ?? 0) + m.quantity);
+        weekGroups.set(week, byProduct);
+      });
+    const installsByWeek = Array.from(weekGroups.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([week, byProduct]) => ({
+        week: formatWeekEnding(week),
+        items: Array.from(byProduct.entries()).map(([pid, qty]) => ({ product: productName(pid), qty })),
+      }));
+
+    const lost = data.movements
+      .filter((m) => m.is_loss && m.from_holder_id === electrician.id && inMonth(m.movement_date))
+      .sort((a, b) => b.movement_date.localeCompare(a.movement_date))
+      .map((m) => ({
+        date: formatDate(m.movement_date),
+        product: productName(m.product_id),
+        qty: m.quantity,
+        charged: m.charged ? `Charged${m.charge_amount ? ` $${m.charge_amount.toLocaleString()}` : ""}` : "Not charged",
+      }));
+
+    const monthLabel = new Date(`${today()}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const reportInner = buildStockReportInner({
+      electricianName: electrician.name,
+      generatedDate: formatDate(today()),
+      monthLabel,
+      remaining,
+      received,
+      installsByWeek,
+      lost,
+      logoUrl: `${window.location.origin}${pickupConfig.logoPath}`,
+    });
+
+    return { electrician, reportInner, monthLabel };
+  }
+
+  function openComposeStockReport() {
+    setError(null);
+    setMessage(null);
+    const report = buildReportForSelected();
+    if (!report) {
+      setError("Select an electrician first.");
+      return;
+    }
+    const firstName = report.electrician.name.split(" ")[0];
+    setComposeKind("report");
+    setComposeBodyInner(report.reportInner);
+    setComposeTo(report.electrician.email ?? "");
+    setComposeCc("");
+    setComposeSubject(`Goldsure stock report - ${report.electrician.name} - ${report.monthLabel}`);
+    setComposeMessage(
+      `Hi ${firstName},\n\nHere is your current Goldsure stock summary for ${report.monthLabel}. Please check the stock on hand below and let me know if anything looks off.\n\nThanks`,
+    );
+    setComposeOpen(true);
+  }
+
   function handlePrintPickupSlip() {
     setError(null);
     const slip = buildSlipForSelected();
@@ -1085,32 +1211,8 @@ export default function App() {
     setTimeout(() => preview.print(), 300);
   }
 
-  // Open the review/edit modal instead of sending straight away.
-  function openComposePickupSlip() {
-    setError(null);
-    setMessage(null);
-    const slip = buildSlipForSelected();
-    if (!slip) {
-      setError("Enter a quantity for at least one product first.");
-      return;
-    }
-    setComposeTo(slip.to.join(", "));
-    setComposeSubject(slip.subject);
-    setComposeCc(slip.cc.join(", "));
-    setComposeMessage(defaultSlipMessage(slip.electrician.name));
-    setComposeOpen(true);
-  }
-
-  async function confirmSendPickupSlip() {
-    const slip = buildSlipForSelected();
-    if (!slip) {
-      setError("Enter a quantity for at least one product first.");
-      setComposeOpen(false);
-      return;
-    }
-
-    const logoUrl = `${window.location.origin}${pickupConfig.logoPath}`;
-    const html = wrapDocument(`${messageToHtml(composeMessage)}${slip.slipInner}${buildSignatureHtml(logoUrl)}`);
+  // Send whatever is in the compose modal (pickup slip or stock report).
+  async function confirmSendEmail() {
     const parseEmails = (value: string) =>
       value
         .split(/[,;\s]+/)
@@ -1118,11 +1220,13 @@ export default function App() {
         .filter(Boolean);
     const to = parseEmails(composeTo);
     const cc = parseEmails(composeCc);
-
     if (!to.length) {
       setError("Enter at least one To address.");
       return;
     }
+
+    const logoUrl = `${window.location.origin}${pickupConfig.logoPath}`;
+    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml(logoUrl)}`);
 
     setSendingSlip(true);
     setError(null);
@@ -1135,14 +1239,16 @@ export default function App() {
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        throw new Error(result.error || "Could not send the pickup slip.");
+        throw new Error(result.error || "Could not send the email.");
       }
-      setMessage(`Pickup slip emailed to ${to.join(", ")}.`);
+      setMessage(`${composeKind === "report" ? "Stock report" : "Pickup slip"} emailed to ${to.join(", ")}.`);
       setComposeOpen(false);
-      setPickupQty({});
-      setPickupNotes("");
+      if (composeKind === "pickup") {
+        setPickupQty({});
+        setPickupNotes("");
+      }
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Could not send the pickup slip.");
+      setError(sendError instanceof Error ? sendError.message : "Could not send the email.");
     } finally {
       setSendingSlip(false);
     }
@@ -1700,6 +1806,7 @@ export default function App() {
               productTotals={productTotals}
               totalStock={totalStock}
               totalFaultyStock={totalFaultyStock}
+              lossSummary={lossSummary}
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
               submitting={submitting}
@@ -1800,6 +1907,7 @@ export default function App() {
               onDeleteMovement={deleteMovement}
               onPrintPickupSlip={handlePrintPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
+              onEmailReport={openComposeStockReport}
             />
           ) : null}
 
@@ -1897,7 +2005,7 @@ export default function App() {
           setCc={setComposeCc}
           setMessage={setComposeMessage}
           onCancel={() => setComposeOpen(false)}
-          onSend={confirmSendPickupSlip}
+          onSend={confirmSendEmail}
         />
       ) : null}
     </main>
@@ -1935,7 +2043,7 @@ function ComposeEmailModal({
         <div className="modal-header">
           <div>
             <h2>Review email</h2>
-            <p>Check and edit the message before it is sent to Specific Freight.</p>
+            <p>Check and edit the message before it is sent.</p>
           </div>
           <button className="icon-button" type="button" onClick={onCancel} aria-label="Close">
             <X size={18} />
@@ -1994,6 +2102,7 @@ function DashboardView({
   productTotals,
   totalStock,
   totalFaultyStock,
+  lossSummary,
   seedWorkbookSnapshot,
   canSeed,
   submitting,
@@ -2008,10 +2117,14 @@ function DashboardView({
   productTotals: ProductTotalRow[];
   totalStock: number;
   totalFaultyStock: number;
+  lossSummary: { holder: Holder; lost: number; charged: number; unchargedUnits: number }[];
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
 }) {
+  const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
+  const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
+  const totalUnchargedUnits = lossSummary.reduce((total, row) => total + row.unchargedUnits, 0);
   return (
     <section className="dashboard-stack">
       <div className="metric-grid">
@@ -2137,6 +2250,51 @@ function DashboardView({
           </table>
         </div>
       </section>
+
+      {lossSummary.length ? (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Stock Losses</h2>
+              <p>
+                {totalLost.toLocaleString()} units lost &middot; ${totalCharged.toLocaleString()} charged &middot;{" "}
+                {totalUnchargedUnits.toLocaleString()} units not charged
+              </p>
+            </div>
+          </div>
+          <div className="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Electrician</th>
+                  <th>Units lost</th>
+                  <th>Charged</th>
+                  <th>Not charged (units)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lossSummary.map((row) => (
+                  <tr key={row.holder.id}>
+                    <td>
+                      <strong>{row.holder.name}</strong>
+                      <span>{titleCase(row.holder.holder_type)}</span>
+                    </td>
+                    <td>{row.lost.toLocaleString()}</td>
+                    <td>{row.charged ? `$${row.charged.toLocaleString()}` : "—"}</td>
+                    <td>
+                      {row.unchargedUnits ? (
+                        <span className="status-chip attention">{row.unchargedUnits.toLocaleString()}</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -2928,6 +3086,7 @@ function ElectriciansView({
   onDeleteMovement,
   onPrintPickupSlip,
   onSendPickupSlip,
+  onEmailReport,
 }: {
   technicians: Holder[];
   warehouses: Holder[];
@@ -2976,6 +3135,7 @@ function ElectriciansView({
   onDeleteMovement: (movementId: string) => void;
   onPrintPickupSlip: () => void;
   onSendPickupSlip: () => void;
+  onEmailReport: () => void;
 }) {
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
@@ -3121,10 +3281,16 @@ function ElectriciansView({
                       Current stock &middot; Returned {totalReturned.toLocaleString()}
                     </p>
                   </div>
-                  <button className="secondary-button" type="button" onClick={() => window.print()}>
-                    <Printer size={18} />
-                    Print report
-                  </button>
+                  <div className="header-actions">
+                    <button className="secondary-button" type="button" onClick={onEmailReport}>
+                      <Send size={17} />
+                      Email report
+                    </button>
+                    <button className="secondary-button" type="button" onClick={() => window.print()}>
+                      <Printer size={18} />
+                      Print report
+                    </button>
+                  </div>
                 </div>
                 <div className="responsive-table">
                   <table>

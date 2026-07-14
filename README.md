@@ -62,7 +62,16 @@ On the **Electricians** tab, **Record Stock Loss** removes lost stock from an
 electrician and keeps a record of the products, quantity, date, and whether the
 electrician was charged (with an optional amount). Click the charged badge in the
 Recorded losses list to toggle charged / not charged later. Losses also appear in
-the ledger as an adjustment labelled "Stock loss".
+the ledger as an adjustment labelled "Stock loss". A **Stock Losses** summary on
+the Dashboard totals units lost, amount charged, and units not charged per
+electrician.
+
+### Emailing an electrician their stock report
+
+On the **Electricians** tab, **Email report** opens the same review/edit email
+window pre-filled with the electrician's saved email address. It sends a monthly
+statement — current stock on hand plus this month's received, installed, and lost
+stock — with your Goldsure signature. Uses the same Resend setup as pickup slips.
 
 ## Warranty Workflow
 
