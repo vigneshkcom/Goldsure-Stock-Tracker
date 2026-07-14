@@ -33,7 +33,54 @@ export function formatSlipDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
-export function buildPickupSlipHtml(input: PickupSlipInput): string {
+// Wrap inner HTML in a full document (used for the print preview and the email).
+export function wrapDocument(innerHtml: string): string {
+  return `<!doctype html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
+<body style="margin:0;padding:24px;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:900px;margin:0 auto;">
+    ${innerHtml}
+  </div>
+</body>
+</html>`;
+}
+
+// Turn a plain-text message into simple HTML paragraphs.
+export function messageToHtml(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) return "";
+  const paragraphs = trimmed
+    .split(/\n{2,}/)
+    .map((block) => `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+  return `<div style="margin-bottom:18px;">${paragraphs}</div>`;
+}
+
+// The Goldsure email signature block.
+export function buildSignatureHtml(logoUrl?: string): string {
+  const { signature } = pickupConfig;
+  const logo = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" style="height:66px;width:auto;display:block;" />`
+    : `<div style="font-size:22px;font-weight:bold;color:#111;">Goldsure</div>`;
+  return `
+  <table style="border-collapse:collapse;margin-top:30px;font-family:Arial,Helvetica,sans-serif;">
+    <tr>
+      <td style="vertical-align:middle;padding-right:16px;">${logo}</td>
+      <td style="vertical-align:middle;padding-left:16px;border-left:2px solid #111;font-size:13px;color:#111;line-height:1.5;">
+        <div style="font-size:18px;font-weight:bold;">${escapeHtml(signature.name)}</div>
+        <div style="margin:2px 0 8px;color:#333;">${escapeHtml(signature.title)}</div>
+        <div><strong>e:</strong> ${escapeHtml(signature.email)}</div>
+        <div><strong>p:</strong> ${escapeHtml(signature.phone)}</div>
+        <div><strong>w:</strong> ${escapeHtml(signature.web)}</div>
+      </td>
+    </tr>
+  </table>
+  <p style="font-size:10px;color:#8a8a8a;line-height:1.45;max-width:840px;margin:16px 0 0;">CONFIDENTIAL EMAIL MESSAGE | This is a confidential message to be read only by the recipient named above. Information on this email, including any attachments, may contain information which is confidential. If you are not the named recipient you must not read, copy, use the email or any information on it, in any way. Any unauthorised use may be the subject of legal proceedings against you. Therefore, please contact the sender immediately by telephone, fax or email at the numbers above if you have received this message in error. It is requested that thereafter this email and any attachments thereto be destroyed.</p>
+  <p style="font-size:11px;color:#2e7d32;margin:8px 0 0;">&#127793; Please consider the environment before printing this email</p>`;
+}
+
+export function buildPickupSlipInner(input: PickupSlipInput): string {
   const { company, freight } = pickupConfig;
   const rows = input.lines.length;
   const logo = input.logoUrl
@@ -67,11 +114,7 @@ export function buildPickupSlipHtml(input: PickupSlipInput): string {
         .join("<br/>")
     : "";
 
-  return `<!doctype html>
-<html>
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
-<body style="margin:0;padding:24px;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-  <div style="max-width:900px;margin:0 auto;">
+  return `
     ${logo}
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <tr>
@@ -107,10 +150,12 @@ export function buildPickupSlipHtml(input: PickupSlipInput): string {
       <div style="margin-top:14px;">Notes:</div>
       ${notesLines ? `<div>${notesLines}</div>` : ""}
       <div>Contact ${escapeHtml(company.requestedBy.split(" ")[0])} for any clarifications on ${escapeHtml(company.phone)} or ${escapeHtml(company.email)}</div>
-    </div>
-  </div>
-</body>
-</html>`;
+    </div>`;
+}
+
+// Full standalone document (used for the print preview).
+export function buildPickupSlipHtml(input: PickupSlipInput): string {
+  return wrapDocument(buildPickupSlipInner(input));
 }
 
 const cell = "border:1px solid #333;padding:6px 8px;";

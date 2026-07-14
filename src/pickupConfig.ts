@@ -8,6 +8,14 @@ export const pickupConfig = {
     phone: "0451 898 761",
     email: "vignesh@goldsure.com.au",
   },
+  // Email signature appended to sent pickup slips.
+  signature: {
+    name: "Vignesh Kirubakaran",
+    title: "Operations Manager",
+    email: "vignesh@goldsure.com.au",
+    phone: "(07) 2146 1500",
+    web: "www.goldsure.com.au",
+  },
   // The warehouse the pickup slip is sent to.
   freight: {
     name: "Specific Freight PTY LTD",

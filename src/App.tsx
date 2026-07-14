@@ -16,17 +16,27 @@ import {
   Printer,
   RefreshCw,
   Search,
+  Send,
   Trash2,
   Truck,
   UserPlus,
   Users,
   Wrench,
+  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { pickupConfig, cartonsForSku } from "./pickupConfig";
-import { buildPickupSlipHtml, formatSlipDate, type PickupLine } from "./pickupSlip";
+import {
+  buildPickupSlipHtml,
+  buildPickupSlipInner,
+  buildSignatureHtml,
+  formatSlipDate,
+  messageToHtml,
+  wrapDocument,
+  type PickupLine,
+} from "./pickupSlip";
 import type {
   BalanceRow,
   Holder,
@@ -404,6 +414,10 @@ export default function App() {
   const [pickupQty, setPickupQty] = useState<Record<string, string>>({});
   const [pickupNotes, setPickupNotes] = useState("");
   const [sendingSlip, setSendingSlip] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeMessage, setComposeMessage] = useState("");
 
   const usingRemote = Boolean(supabase && !localOnly);
 
@@ -917,6 +931,7 @@ export default function App() {
     }
   }
 
+  // Build the slip data (recipients + inner HTML) from the current selection.
   function buildSlipForSelected() {
     const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
     if (!electrician) return null;
@@ -930,7 +945,7 @@ export default function App() {
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
     if (!lines.length) return null;
 
-    const html = buildPickupSlipHtml({
+    const slipInner = buildPickupSlipInner({
       requestDate: formatSlipDate(today()),
       releaseDate: formatSlipDate(pickupReleaseDate),
       recipientName: electrician.name,
@@ -946,11 +961,17 @@ export default function App() {
 
     return {
       electrician,
-      html,
+      slipInner,
       to: pickupConfig.freight.to,
       cc,
       subject: `Stock Release Request - ${electrician.name} - ${formatSlipDate(pickupReleaseDate)}`,
     };
+  }
+
+  function defaultSlipMessage(electricianName: string) {
+    return `Hi Damien,\n\nPlease find our stock release request below for ${electricianName}, with a requested release date of ${formatSlipDate(
+      pickupReleaseDate,
+    )}.\n\nCould you please arrange the items below for pickup? Let me know if you need anything further.\n\nThanks`;
   }
 
   function handlePrintPickupSlip() {
@@ -965,13 +986,14 @@ export default function App() {
       setError("Allow pop-ups for this site to preview or print the slip.");
       return;
     }
-    preview.document.write(slip.html);
+    preview.document.write(wrapDocument(slip.slipInner));
     preview.document.close();
     preview.focus();
     setTimeout(() => preview.print(), 300);
   }
 
-  async function handleSendPickupSlip() {
+  // Open the review/edit modal instead of sending straight away.
+  function openComposePickupSlip() {
     setError(null);
     setMessage(null);
     const slip = buildSlipForSelected();
@@ -979,21 +1001,42 @@ export default function App() {
       setError("Enter a quantity for at least one product first.");
       return;
     }
+    setComposeSubject(slip.subject);
+    setComposeCc(slip.cc.join(", "));
+    setComposeMessage(defaultSlipMessage(slip.electrician.name));
+    setComposeOpen(true);
+  }
+
+  async function confirmSendPickupSlip() {
+    const slip = buildSlipForSelected();
+    if (!slip) {
+      setError("Enter a quantity for at least one product first.");
+      setComposeOpen(false);
+      return;
+    }
+
+    const logoUrl = `${window.location.origin}${pickupConfig.logoPath}`;
+    const html = wrapDocument(`${messageToHtml(composeMessage)}${slip.slipInner}${buildSignatureHtml(logoUrl)}`);
+    const cc = composeCc
+      .split(/[,;\s]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
 
     setSendingSlip(true);
+    setError(null);
+    setMessage(null);
     try {
       const response = await fetch("/api/send-pickup-slip", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ to: slip.to, cc: slip.cc, subject: slip.subject, html: slip.html }),
+        body: JSON.stringify({ to: slip.to, cc, subject: composeSubject, html }),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
         throw new Error(result.error || "Could not send the pickup slip.");
       }
-      setMessage(
-        `Pickup slip emailed to Specific Freight${slip.electrician.email ? ` (CC ${slip.electrician.name})` : ""}.`,
-      );
+      setMessage(`Pickup slip emailed to Specific Freight (${slip.to.join(", ")}).`);
+      setComposeOpen(false);
       setPickupQty({});
       setPickupNotes("");
     } catch (sendError) {
@@ -1641,7 +1684,7 @@ export default function App() {
               onGiveStock={handleGiveStock}
               onRecordInstall={handleRecordInstall}
               onPrintPickupSlip={handlePrintPickupSlip}
-              onSendPickupSlip={handleSendPickupSlip}
+              onSendPickupSlip={openComposePickupSlip}
             />
           ) : null}
 
@@ -1726,7 +1769,92 @@ export default function App() {
           ) : null}
         </>
       )}
+
+      {composeOpen ? (
+        <ComposeEmailModal
+          to={pickupConfig.freight.to.join(", ")}
+          subject={composeSubject}
+          cc={composeCc}
+          message={composeMessage}
+          sending={sendingSlip}
+          setSubject={setComposeSubject}
+          setCc={setComposeCc}
+          setMessage={setComposeMessage}
+          onCancel={() => setComposeOpen(false)}
+          onSend={confirmSendPickupSlip}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ComposeEmailModal({
+  to,
+  subject,
+  cc,
+  message,
+  sending,
+  setSubject,
+  setCc,
+  setMessage,
+  onCancel,
+  onSend,
+}: {
+  to: string;
+  subject: string;
+  cc: string;
+  message: string;
+  sending: boolean;
+  setSubject: (value: string) => void;
+  setCc: (value: string) => void;
+  setMessage: (value: string) => void;
+  onCancel: () => void;
+  onSend: () => void;
+}) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2>Review email</h2>
+            <p>Check and edit the message before it is sent to Specific Freight.</p>
+          </div>
+          <button className="icon-button" type="button" onClick={onCancel} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <label>
+            To
+            <input value={to} readOnly />
+          </label>
+          <label>
+            CC
+            <input value={cc} onChange={(event) => setCc(event.target.value)} placeholder="name@email.com, ..." />
+          </label>
+          <label>
+            Subject
+            <input value={subject} onChange={(event) => setSubject(event.target.value)} />
+          </label>
+          <label>
+            Message
+            <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={8} />
+          </label>
+          <p className="field-hint">The Stock Release Request table and your Goldsure signature are added automatically below your message.</p>
+        </div>
+
+        <div className="modal-footer">
+          <button className="ghost-button" type="button" onClick={onCancel} disabled={sending}>
+            Cancel
+          </button>
+          <button className="primary-button" type="button" onClick={onSend} disabled={sending}>
+            <Send size={17} />
+            {sending ? "Sending…" : "Send email"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
