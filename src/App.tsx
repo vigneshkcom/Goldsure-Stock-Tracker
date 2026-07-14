@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Boxes,
   CheckCircle2,
   ClipboardList,
@@ -7,8 +8,6 @@ import {
   Database,
   DownloadCloud,
   Factory,
-  LogIn,
-  LogOut,
   PackageCheck,
   PackagePlus,
   Plus,
@@ -21,7 +20,6 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import type { Session } from "@supabase/supabase-js";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
@@ -51,6 +49,30 @@ const movementLabels: Record<MovementType, string> = {
   customer_post: "Post to customer",
   faulty_collect: "Faulty collected",
   adjustment: "Adjustment",
+};
+
+// Plain-English action names and explanations for the movement picker,
+// so it is obvious what each option does before you save it.
+const movementActionLabels: Record<MovementType, string> = {
+  opening: "Set opening count",
+  receive: "Receive new stock",
+  issue: "Send to electrician",
+  return: "Return to warehouse",
+  install: "Install / use on job",
+  customer_post: "Post to customer",
+  faulty_collect: "Faulty collected",
+  adjustment: "Adjust count",
+};
+
+const movementDescriptions: Record<MovementType, string> = {
+  opening: "Set a starting stock count for a holder. Nothing is taken from anywhere else.",
+  receive: "New stock has arrived into a warehouse.",
+  issue: "Move stock from a warehouse out to an electrician.",
+  return: "An electrician sends stock back to a warehouse.",
+  install: "Stock is installed on a job and permanently leaves the electrician.",
+  customer_post: "Replacement stock posted to a customer (managed on the Warranty tab).",
+  faulty_collect: "A faulty unit is collected and held by the electrician (Warranty tab).",
+  adjustment: "Manually correct a count up or down (e.g. stocktake, loss, found stock).",
 };
 
 const movementTone: Record<MovementType, string> = {
@@ -113,26 +135,25 @@ function cloneLocalSeed(): StockData {
   });
 }
 
-function createRemoteSeed(userId: string): StockData {
+function createRemoteSeed(): StockData {
   const productMap = new Map<string, string>();
   const holderMap = new Map<string, string>();
 
   const products = workbookSeed.products.map((product) => {
     const id = crypto.randomUUID();
     productMap.set(product.id, id);
-    return { ...product, id, user_id: userId };
+    return { ...product, id };
   });
 
   const holders = workbookSeed.holders.map((holder) => {
     const id = crypto.randomUUID();
     holderMap.set(holder.id, id);
-    return { ...holder, id, user_id: userId };
+    return { ...holder, id };
   });
 
   const movements = workbookSeed.movements.map((movement) => ({
     ...movement,
     id: crypto.randomUUID(),
-    user_id: userId,
     product_condition: "good" as ProductCondition,
     product_id: productMap.get(movement.product_id)!,
     from_holder_id: movement.from_holder_id ? holderMap.get(movement.from_holder_id)! : null,
@@ -256,7 +277,6 @@ function sortWarrantyJobs(jobs: WarrantyJob[]) {
   );
 }
 
-type AuthMode = "signin" | "signup";
 type Tab = "dashboard" | "movements" | "warranty" | "setup";
 type AdjustmentDirection = "in" | "out";
 
@@ -265,12 +285,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [localOnly, setLocalOnly] = useState(!supabaseConfigured);
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
-  const [authMode, setAuthMode] = useState<AuthMode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const [movementDate, setMovementDate] = useState(today());
@@ -309,7 +325,7 @@ export default function App() {
   const [changeQuantity, setChangeQuantity] = useState("1");
   const [changeNotes, setChangeNotes] = useState("");
 
-  const usingRemote = Boolean(supabase && !localOnly && session);
+  const usingRemote = Boolean(supabase && !localOnly);
 
   const goodBalances = useMemo(() => calculateBalances(data.movements, "good"), [data.movements]);
   const faultyBalances = useMemo(() => calculateBalances(data.movements, "faulty"), [data.movements]);
@@ -420,43 +436,7 @@ export default function App() {
       return;
     }
 
-    let mounted = true;
-
-    async function initialiseRemote() {
-      setLoading(true);
-      const { data: authData, error: authError } = await supabase!.auth.getSession();
-      if (!mounted) return;
-
-      if (authError) {
-        setError(authError.message);
-      }
-
-      setSession(authData.session);
-      if (authData.session?.user.id) {
-        await loadRemoteData(authData.session.user.id);
-      } else {
-        setData(emptyData);
-        setLoading(false);
-      }
-    }
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      if (nextSession?.user.id) {
-        void loadRemoteData(nextSession.user.id);
-      } else {
-        setData(emptyData);
-      }
-    });
-
-    void initialiseRemote();
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    void loadRemoteData();
   }, [localOnly]);
 
   useEffect(() => {
@@ -490,16 +470,16 @@ export default function App() {
     }
   }, [selectedWarrantyJobId, sortedWarrantyJobs]);
 
-  async function loadRemoteData(userId: string) {
+  async function loadRemoteData() {
     if (!supabase) return;
     setLoading(true);
     setError(null);
 
     const [productsResult, holdersResult, movementsResult, warrantyJobsResult] = await Promise.all([
-      supabase.from("products").select("*").eq("user_id", userId).order("name"),
-      supabase.from("holders").select("*").eq("user_id", userId).order("holder_type").order("name"),
-      supabase.from("stock_movements").select("*").eq("user_id", userId).order("movement_date", { ascending: false }),
-      supabase.from("warranty_jobs").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+      supabase.from("products").select("*").order("name"),
+      supabase.from("holders").select("*").order("holder_type").order("name"),
+      supabase.from("stock_movements").select("*").order("movement_date", { ascending: false }),
+      supabase.from("warranty_jobs").select("*").order("created_at", { ascending: false }),
     ]);
 
     const firstError = productsResult.error ?? holdersResult.error ?? movementsResult.error ?? warrantyJobsResult.error;
@@ -527,11 +507,20 @@ export default function App() {
     });
   }
 
+  // Update in-memory state, persisting to browser storage only when not using the cloud.
+  function updateLocalOrState(updater: (current: StockData) => StockData) {
+    if (usingRemote) {
+      setData((current) => normalizeData(updater(current)));
+    } else {
+      updateLocal(updater);
+    }
+  }
+
   async function saveProduct(product: Product) {
-    if (usingRemote && supabase && session) {
+    if (usingRemote && supabase) {
       const { data: inserted, error: insertError } = await supabase
         .from("products")
-        .insert({ ...product, user_id: session.user.id })
+        .insert({ ...product })
         .select("*")
         .single();
       if (insertError) throw insertError;
@@ -543,10 +532,10 @@ export default function App() {
   }
 
   async function saveHolder(holder: Holder) {
-    if (usingRemote && supabase && session) {
+    if (usingRemote && supabase) {
       const { data: inserted, error: insertError } = await supabase
         .from("holders")
-        .insert({ ...holder, user_id: session.user.id })
+        .insert({ ...holder })
         .select("*")
         .single();
       if (insertError) throw insertError;
@@ -558,10 +547,10 @@ export default function App() {
   }
 
   async function saveWarrantyJob(job: WarrantyJob) {
-    if (usingRemote && supabase && session) {
+    if (usingRemote && supabase) {
       const { data: inserted, error: insertError } = await supabase
         .from("warranty_jobs")
-        .insert({ ...job, user_id: session.user.id })
+        .insert({ ...job })
         .select("*")
         .single();
       if (insertError) throw insertError;
@@ -606,10 +595,10 @@ export default function App() {
       product_condition: movement.product_condition ?? "good",
     }));
 
-    if (usingRemote && supabase && session) {
+    if (usingRemote && supabase) {
       const { data: inserted, error: insertError } = await supabase
         .from("stock_movements")
-        .insert(prepared.map((movement) => ({ ...movement, user_id: session.user.id })))
+        .insert(prepared.map((movement) => ({ ...movement })))
         .select("*");
       if (insertError) throw insertError;
       setData((current) =>
@@ -655,14 +644,124 @@ export default function App() {
     }
   }
 
+  async function removeHolder(holderId: string) {
+    const holder = data.holders.find((item) => item.id === holderId);
+    if (!holder) return;
+
+    const hasHistory = data.movements.some(
+      (movement) => movement.from_holder_id === holderId || movement.to_holder_id === holderId,
+    );
+
+    const confirmMessage = hasHistory
+      ? `${holder.name} has stock movements, so their history stays for the records. Hide them from the lists?`
+      : `Remove ${holder.name}?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      if (hasHistory) {
+        if (usingRemote && supabase) {
+          const { error: updateError } = await supabase
+            .from("holders")
+            .update({ active: false })
+            .eq("id", holderId);
+          if (updateError) throw updateError;
+          setData((current) =>
+            normalizeData({
+              ...current,
+              holders: current.holders.map((item) => (item.id === holderId ? { ...item, active: false } : item)),
+            }),
+          );
+        } else {
+          updateLocal((current) => ({
+            ...current,
+            holders: current.holders.map((item) => (item.id === holderId ? { ...item, active: false } : item)),
+          }));
+        }
+        setMessage(`${holder.name} hidden. Their past movements are kept.`);
+      } else {
+        if (usingRemote && supabase) {
+          const { error: deleteError } = await supabase.from("holders").delete().eq("id", holderId);
+          if (deleteError) throw deleteError;
+        }
+        updateLocalOrState((current) => ({
+          ...current,
+          holders: current.holders.filter((item) => item.id !== holderId),
+        }));
+        setMessage(`${holder.name} removed.`);
+      }
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Could not remove this holder.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function removeProduct(productId: string) {
+    const product = data.products.find((item) => item.id === productId);
+    if (!product) return;
+
+    const hasHistory = data.movements.some((movement) => movement.product_id === productId);
+
+    const confirmMessage = hasHistory
+      ? `${product.name} has stock movements, so its history stays for the records. Hide it from the lists?`
+      : `Remove ${product.name}?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      if (hasHistory) {
+        if (usingRemote && supabase) {
+          const { error: updateError } = await supabase
+            .from("products")
+            .update({ active: false })
+            .eq("id", productId);
+          if (updateError) throw updateError;
+          setData((current) =>
+            normalizeData({
+              ...current,
+              products: current.products.map((item) => (item.id === productId ? { ...item, active: false } : item)),
+            }),
+          );
+        } else {
+          updateLocal((current) => ({
+            ...current,
+            products: current.products.map((item) => (item.id === productId ? { ...item, active: false } : item)),
+          }));
+        }
+        setMessage(`${product.name} hidden. Its past movements are kept.`);
+      } else {
+        if (usingRemote && supabase) {
+          const { error: deleteError } = await supabase.from("products").delete().eq("id", productId);
+          if (deleteError) throw deleteError;
+        }
+        updateLocalOrState((current) => ({
+          ...current,
+          products: current.products.filter((item) => item.id !== productId),
+        }));
+        setMessage(`${product.name} removed.`);
+      }
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Could not remove this product.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function seedWorkbookSnapshot() {
     setSubmitting(true);
     setError(null);
     setMessage(null);
 
     try {
-      if (usingRemote && supabase && session) {
-        const seed = createRemoteSeed(session.user.id);
+      if (usingRemote && supabase) {
+        const seed = createRemoteSeed();
         const { error: productsError } = await supabase.from("products").insert(seed.products);
         if (productsError) throw productsError;
         const { error: holdersError } = await supabase.from("holders").insert(seed.holders);
@@ -681,34 +780,6 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleAuth(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase) return;
-    setSubmitting(true);
-    setError(null);
-    setMessage(null);
-
-    const result =
-      authMode === "signin"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
-
-    if (result.error) {
-      setError(result.error.message);
-    } else if (authMode === "signup") {
-      setMessage("Account created. Check your email if confirmation is enabled.");
-    }
-
-    setSubmitting(false);
-  }
-
-  async function handleSignOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    setSession(null);
-    setData(emptyData);
   }
 
   async function handleAddProduct(event: FormEvent<HTMLFormElement>) {
@@ -1027,53 +1098,6 @@ export default function App() {
 
   const hasAnyData = data.products.length > 0 || data.holders.length > 0 || data.movements.length > 0;
 
-  if (!localOnly && supabaseConfigured && !session && !loading) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-panel">
-          <div className="brand-mark">
-            <Boxes size={28} />
-          </div>
-          <h1>Stock Tracker</h1>
-          <p className="muted">Sign in to use your Supabase-backed tracker.</p>
-
-          <form className="auth-form" onSubmit={handleAuth}>
-            <label>
-              Email
-              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
-            </label>
-            <label>
-              Password
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                minLength={6}
-                required
-              />
-            </label>
-            <button className="primary-button" type="submit" disabled={submitting}>
-              {authMode === "signin" ? <LogIn size={18} /> : <UserPlus size={18} />}
-              {authMode === "signin" ? "Sign in" : "Create account"}
-            </button>
-          </form>
-
-          <div className="auth-actions">
-            <button className="ghost-button" type="button" onClick={() => setAuthMode(authMode === "signin" ? "signup" : "signin")}>
-              {authMode === "signin" ? "Create account" : "Use existing account"}
-            </button>
-            <button className="ghost-button" type="button" onClick={() => setLocalOnly(true)}>
-              Continue locally
-            </button>
-          </div>
-
-          {error ? <div className="notice error">{error}</div> : null}
-          {message ? <div className="notice success">{message}</div> : null}
-        </section>
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1087,19 +1111,8 @@ export default function App() {
         <div className="topbar-actions">
           <span className={`status-pill ${usingRemote ? "cloud" : "local"}`}>
             {usingRemote ? <Cloud size={16} /> : <Database size={16} />}
-            {usingRemote ? session?.user.email : "Local storage"}
+            {usingRemote ? "Shared cloud" : "This device only"}
           </span>
-          {usingRemote ? (
-            <button className="icon-text-button" type="button" onClick={handleSignOut} title="Sign out">
-              <LogOut size={18} />
-              Sign out
-            </button>
-          ) : supabaseConfigured ? (
-            <button className="icon-text-button" type="button" onClick={() => setLocalOnly(false)} title="Use Supabase">
-              <Cloud size={18} />
-              Cloud
-            </button>
-          ) : null}
         </div>
       </header>
 
@@ -1268,6 +1281,8 @@ export default function App() {
               submitting={submitting}
               onAddHolder={handleAddHolder}
               onAddProduct={handleAddProduct}
+              onRemoveHolder={removeHolder}
+              onRemoveProduct={removeProduct}
               setHolderName={setHolderName}
               setHolderType={setHolderType}
               setProductName={setProductName}
@@ -1519,31 +1534,47 @@ function MovementForm({
     movementType === "issue" ? technicians : movementType === "return" || movementType === "receive" ? warehouses : activeHolders;
   const available = showFrom ? getBalance(balanceMap, fromHolderId, productId) : null;
 
+  const holderName = (id: string) => activeHolders.find((holder) => holder.id === id)?.name ?? "";
+  const productLabel = activeProducts.find((product) => product.id === productId)?.name ?? "stock";
+  const parsedQuantity = Number(quantity);
+  const quantityLabel = Number.isInteger(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity.toLocaleString() : "—";
+  const fromLabel = showFrom ? holderName(fromHolderId) : "";
+  const toLabel = showTo ? holderName(toHolderId) : "";
+  // How much stock is available where it is being taken from, so an
+  // over-issue is obvious before the form is submitted.
+  const notEnoughStock =
+    showFrom && available !== null && Number.isInteger(parsedQuantity) && parsedQuantity > 0 && available < parsedQuantity;
+
+  // Render an option with its current stock for the chosen product, e.g.
+  // "Melbourne Office — 263 in stock", so the counts are visible in the picker.
+  const holderOption = (holder: Holder) => (
+    <option value={holder.id} key={holder.id}>
+      {holder.name} — {getBalance(balanceMap, holder.id, productId).toLocaleString()} in stock
+    </option>
+  );
+
   return (
     <section className="panel movement-panel">
       <div className="panel-header">
         <div>
-          <h2>Enter Movement</h2>
-          <p>{available === null ? "Add stock to a holder" : `${available.toLocaleString()} available from selected holder`}</p>
+          <h2>Move Stock</h2>
+          <p>Pick what happened, then check the summary before you save.</p>
         </div>
       </div>
 
       <form className="movement-form" onSubmit={onSubmit}>
         <label>
-          Date
-          <input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required />
-        </label>
-
-        <label>
-          Movement
+          What happened?
           <select value={movementType} onChange={(event) => setMovementType(event.target.value as MovementType)}>
             {generalMovementTypes.map((type) => (
               <option value={type} key={type}>
-                {movementLabels[type]}
+                {movementActionLabels[type]}
               </option>
             ))}
           </select>
         </label>
+
+        <p className="field-hint full-width">{movementDescriptions[movementType]}</p>
 
         {movementType === "adjustment" ? (
           <div className="segmented-control" role="group" aria-label="Adjustment direction">
@@ -1552,17 +1583,22 @@ function MovementForm({
               type="button"
               onClick={() => setAdjustmentDirection("in")}
             >
-              In
+              Add stock (in)
             </button>
             <button
               className={adjustmentDirection === "out" ? "active" : ""}
               type="button"
               onClick={() => setAdjustmentDirection("out")}
             >
-              Out
+              Remove stock (out)
             </button>
           </div>
         ) : null}
+
+        <label>
+          Date
+          <input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required />
+        </label>
 
         <label>
           Product
@@ -1577,26 +1613,18 @@ function MovementForm({
 
         {showFrom ? (
           <label>
-            From
+            From (stock leaves here)
             <select value={fromHolderId} onChange={(event) => setFromHolderId(event.target.value)} required>
-              {fromOptions.map((holder) => (
-                <option value={holder.id} key={holder.id}>
-                  {holder.name}
-                </option>
-              ))}
+              {fromOptions.map(holderOption)}
             </select>
           </label>
         ) : null}
 
         {showTo ? (
           <label>
-            To
+            To (stock arrives here)
             <select value={toHolderId} onChange={(event) => setToHolderId(event.target.value)} required>
-              {toOptions.map((holder) => (
-                <option value={holder.id} key={holder.id}>
-                  {holder.name}
-                </option>
-              ))}
+              {toOptions.map(holderOption)}
             </select>
           </label>
         ) : null}
@@ -1612,6 +1640,35 @@ function MovementForm({
             required
           />
         </label>
+
+        {showFrom && available !== null ? (
+          <p className={`field-hint full-width ${notEnoughStock ? "warn" : ""}`}>
+            {fromLabel || "Selected holder"} currently has {available.toLocaleString()} of {productLabel}.
+            {notEnoughStock ? " That is not enough for this movement." : ""}
+          </p>
+        ) : null}
+
+        <div className="movement-preview full-width" role="status">
+          <span className="preview-label">Summary</span>
+          <span className="preview-body">
+            {quantityLabel} × {productLabel}
+            {fromLabel ? (
+              <>
+                {" "}
+                <span className="preview-flow">
+                  {fromLabel} <ArrowRight size={14} /> {toLabel || "installed / used"}
+                </span>
+              </>
+            ) : toLabel ? (
+              <>
+                {" "}
+                <span className="preview-flow">
+                  added to {toLabel}
+                </span>
+              </>
+            ) : null}
+          </span>
+        </div>
 
         <label>
           Reference
@@ -2133,6 +2190,8 @@ function SetupView({
   submitting,
   onAddHolder,
   onAddProduct,
+  onRemoveHolder,
+  onRemoveProduct,
   setHolderName,
   setHolderType,
   setProductName,
@@ -2147,13 +2206,101 @@ function SetupView({
   submitting: boolean;
   onAddHolder: (event: FormEvent<HTMLFormElement>) => void;
   onAddProduct: (event: FormEvent<HTMLFormElement>) => void;
+  onRemoveHolder: (holderId: string) => void;
+  onRemoveProduct: (productId: string) => void;
   setHolderName: (value: string) => void;
   setHolderType: (value: HolderType) => void;
   setProductName: (value: string) => void;
   setProductSku: (value: string) => void;
 }) {
+  const electricians = activeHolders.filter((holder) => holder.holder_type === "technician");
+  const otherHolders = activeHolders.filter((holder) => holder.holder_type !== "technician");
+
   return (
     <section className="setup-grid">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Electricians &amp; Warehouses</h2>
+            <p>{electricians.length} electricians, {otherHolders.length} warehouses / other</p>
+          </div>
+        </div>
+
+        <form className="setup-form" onSubmit={onAddHolder}>
+          <label>
+            Name
+            <input
+              value={holderName}
+              onChange={(event) => setHolderName(event.target.value)}
+              placeholder="e.g. John Smith"
+              required
+            />
+          </label>
+          <label>
+            Type
+            <select value={holderType} onChange={(event) => setHolderType(event.target.value as HolderType)}>
+              <option value="technician">Electrician</option>
+              <option value="warehouse">Warehouse</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <button className="secondary-button" type="submit" disabled={submitting}>
+            <UserPlus size={18} />
+            Add
+          </button>
+        </form>
+
+        {electricians.length ? (
+          <>
+            <p className="list-label">Electricians</p>
+            <div className="entity-list">
+              {electricians.map((holder) => (
+                <div className="entity-row" key={holder.id}>
+                  <Users size={17} />
+                  <strong>{holder.name}</strong>
+                  <span>Electrician</span>
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    title={`Remove ${holder.name}`}
+                    aria-label={`Remove ${holder.name}`}
+                    disabled={submitting}
+                    onClick={() => onRemoveHolder(holder.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {otherHolders.length ? (
+          <>
+            <p className="list-label">Warehouses &amp; other</p>
+            <div className="entity-list">
+              {otherHolders.map((holder) => (
+                <div className="entity-row" key={holder.id}>
+                  {holder.holder_type === "warehouse" ? <Factory size={17} /> : <Boxes size={17} />}
+                  <strong>{holder.name}</strong>
+                  <span>{titleCase(holder.holder_type)}</span>
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    title={`Remove ${holder.name}`}
+                    aria-label={`Remove ${holder.name}`}
+                    disabled={submitting}
+                    onClick={() => onRemoveHolder(holder.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </section>
+
       <section className="panel">
         <div className="panel-header">
           <div>
@@ -2183,44 +2330,16 @@ function SetupView({
               <PackagePlus size={17} />
               <strong>{product.name}</strong>
               <span>{product.sku}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Holders</h2>
-            <p>{activeHolders.length} active holders</p>
-          </div>
-        </div>
-
-        <form className="setup-form" onSubmit={onAddHolder}>
-          <label>
-            Name
-            <input value={holderName} onChange={(event) => setHolderName(event.target.value)} required />
-          </label>
-          <label>
-            Type
-            <select value={holderType} onChange={(event) => setHolderType(event.target.value as HolderType)}>
-              <option value="warehouse">Warehouse</option>
-              <option value="technician">Technician</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-          <button className="secondary-button" type="submit" disabled={submitting}>
-            <Factory size={18} />
-            Add holder
-          </button>
-        </form>
-
-        <div className="entity-list">
-          {activeHolders.map((holder) => (
-            <div className="entity-row" key={holder.id}>
-              {holder.holder_type === "warehouse" ? <Factory size={17} /> : <Users size={17} />}
-              <strong>{holder.name}</strong>
-              <span>{titleCase(holder.holder_type)}</span>
+              <button
+                className="icon-button danger"
+                type="button"
+                title={`Remove ${product.name}`}
+                aria-label={`Remove ${product.name}`}
+                disabled={submitting}
+                onClick={() => onRemoveProduct(product.id)}
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
         </div>

@@ -71,42 +71,6 @@ export const workbookHolders: Holder[] = [
     active: true,
   },
   {
-    id: "018f3a9a-9301-7a2a-9d66-000000000207",
-    name: "Electrician - 5",
-    holder_type: "technician",
-    active: true,
-  },
-  {
-    id: "018f3a9a-9301-7a2a-9d66-000000000208",
-    name: "Electrician - 6",
-    holder_type: "technician",
-    active: true,
-  },
-  {
-    id: "018f3a9a-9301-7a2a-9d66-000000000209",
-    name: "Electrician - 7",
-    holder_type: "technician",
-    active: true,
-  },
-  {
-    id: "018f3a9a-9301-7a2a-9d66-000000000210",
-    name: "Electrician - 8",
-    holder_type: "technician",
-    active: true,
-  },
-  {
-    id: "018f3a9a-9301-7a2a-9d66-000000000211",
-    name: "Electrician - 9",
-    holder_type: "technician",
-    active: true,
-  },
-  {
-    id: "018f3a9a-9301-7a2a-9d66-000000000212",
-    name: "Electrician - 10",
-    holder_type: "technician",
-    active: true,
-  },
-  {
     id: "018f3a9a-9301-7a2a-9d66-000000000301",
     name: "Warehouse Transfer",
     holder_type: "other",

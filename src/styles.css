@@ -517,7 +517,7 @@ textarea:focus {
 
 .entity-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   min-height: 44px;
@@ -532,6 +532,60 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.list-label {
+  margin: 4px 18px 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field-hint {
+  margin: -4px 0 2px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.field-hint.warn {
+  color: var(--red);
+  font-weight: 720;
+}
+
+.movement-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  padding: 12px 14px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.preview-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 780;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.preview-body {
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 760;
+}
+
+.preview-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green-dark);
 }
 
 .job-list {

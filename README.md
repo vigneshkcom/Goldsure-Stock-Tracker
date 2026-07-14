@@ -13,6 +13,12 @@ A Vercel-ready stock tracker rebuilt from `Stock Tracker 2026.xlsx`.
 - Customer postings from a warehouse, with reference and tracking.
 - Electrician changeovers where good stock is installed and faulty stock is held separately in the electrician's inventory.
 
+## No Login
+
+The app is an internal tool, so there is **no sign-in**. It opens straight to the
+dashboard. When Supabase is connected, everyone who opens the site shares the same
+live data. When it is not, the app stores data in the browser on that device only.
+
 ## Local Setup
 
 ```bash
@@ -22,22 +28,33 @@ pnpm dev
 
 The app works locally with browser storage if Supabase variables are not set.
 
-## Supabase Setup
+## Supabase Setup (shared cloud, no login)
 
-1. Create a Supabase project.
+1. Create a Supabase project (keep it private — anyone with the anon key can read
+   and write the data).
 2. Open the SQL editor and run `supabase/schema.sql`.
-3. In Supabase Auth, enable email/password sign-in.
-4. Copy `.env.example` to `.env.local`.
-5. Add:
+3. Copy `.env.example` to `.env.local`.
+4. Add:
 
 ```bash
 VITE_SUPABASE_URL=your-project-url
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-After signing in, use **Load workbook snapshot** to seed the first set of products, holders, and opening balances.
+Use **Load workbook snapshot** to seed the first set of products, holders, and
+opening balances.
 
-If the app has already been deployed and connected to Supabase, rerun `supabase/schema.sql` after pulling updates. It is idempotent and adds the warranty job table plus the extra stock movement columns without clearing existing data.
+**Upgrading an existing deployment:** rerun `supabase/schema.sql` after pulling
+these updates. It is idempotent — it removes the old per-account sign-in
+requirement, switches to a shared workspace, and keeps your existing data. Data
+that was created under a signed-in account before this change stays visible.
+
+## Managing Electricians & Products
+
+Use the **Setup** tab to add or remove electricians, warehouses, and products.
+Removing an electrician with no stock history deletes them outright; if they have
+past movements, they are hidden from the lists while their history is kept for the
+records.
 
 ## Warranty Workflow
 
