@@ -983,6 +983,14 @@ textarea:focus {
   }
 }
 
+/* The Move Stock form + ledger need more room before sitting side by side, so
+   stack them into one full-width column until the window is comfortably wide. */
+@media (max-width: 1200px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1040px) {
   .workspace-grid,
   .setup-grid,
