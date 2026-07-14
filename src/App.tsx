@@ -415,6 +415,7 @@ export default function App() {
   const [pickupNotes, setPickupNotes] = useState("");
   const [sendingSlip, setSendingSlip] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeCc, setComposeCc] = useState("");
   const [composeMessage, setComposeMessage] = useState("");
@@ -1001,6 +1002,7 @@ export default function App() {
       setError("Enter a quantity for at least one product first.");
       return;
     }
+    setComposeTo(slip.to.join(", "));
     setComposeSubject(slip.subject);
     setComposeCc(slip.cc.join(", "));
     setComposeMessage(defaultSlipMessage(slip.electrician.name));
@@ -1017,10 +1019,18 @@ export default function App() {
 
     const logoUrl = `${window.location.origin}${pickupConfig.logoPath}`;
     const html = wrapDocument(`${messageToHtml(composeMessage)}${slip.slipInner}${buildSignatureHtml(logoUrl)}`);
-    const cc = composeCc
-      .split(/[,;\s]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const parseEmails = (value: string) =>
+      value
+        .split(/[,;\s]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    const to = parseEmails(composeTo);
+    const cc = parseEmails(composeCc);
+
+    if (!to.length) {
+      setError("Enter at least one To address.");
+      return;
+    }
 
     setSendingSlip(true);
     setError(null);
@@ -1029,13 +1039,13 @@ export default function App() {
       const response = await fetch("/api/send-pickup-slip", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ to: slip.to, cc, subject: composeSubject, html }),
+        body: JSON.stringify({ to, cc, subject: composeSubject, html }),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
         throw new Error(result.error || "Could not send the pickup slip.");
       }
-      setMessage(`Pickup slip emailed to Specific Freight (${slip.to.join(", ")}).`);
+      setMessage(`Pickup slip emailed to ${to.join(", ")}.`);
       setComposeOpen(false);
       setPickupQty({});
       setPickupNotes("");
@@ -1772,11 +1782,12 @@ export default function App() {
 
       {composeOpen ? (
         <ComposeEmailModal
-          to={pickupConfig.freight.to.join(", ")}
+          to={composeTo}
           subject={composeSubject}
           cc={composeCc}
           message={composeMessage}
           sending={sendingSlip}
+          setTo={setComposeTo}
           setSubject={setComposeSubject}
           setCc={setComposeCc}
           setMessage={setComposeMessage}
@@ -1794,6 +1805,7 @@ function ComposeEmailModal({
   cc,
   message,
   sending,
+  setTo,
   setSubject,
   setCc,
   setMessage,
@@ -1805,6 +1817,7 @@ function ComposeEmailModal({
   cc: string;
   message: string;
   sending: boolean;
+  setTo: (value: string) => void;
   setSubject: (value: string) => void;
   setCc: (value: string) => void;
   setMessage: (value: string) => void;
@@ -1827,7 +1840,7 @@ function ComposeEmailModal({
         <div className="modal-body">
           <label>
             To
-            <input value={to} readOnly />
+            <input value={to} onChange={(event) => setTo(event.target.value)} placeholder="name@email.com, ..." />
           </label>
           <label>
             CC
