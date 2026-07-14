@@ -21,8 +21,16 @@ create table if not exists public.holders (
   name text not null,
   holder_type text not null check (holder_type in ('warehouse', 'technician', 'other')),
   active boolean not null default true,
+  phone text,
+  address text,
+  email text,
   created_at timestamptz not null default now()
 );
+
+-- Contact details for electricians (safe to run repeatedly).
+alter table public.holders add column if not exists phone text;
+alter table public.holders add column if not exists address text;
+alter table public.holders add column if not exists email text;
 
 create table if not exists public.warranty_jobs (
   id uuid primary key default gen_random_uuid(),

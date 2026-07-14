@@ -11,11 +11,11 @@ import {
   HardHat,
   PackageCheck,
   PackagePlus,
+  Pencil,
   Plus,
   Printer,
   RefreshCw,
   Search,
-  ShieldCheck,
   Trash2,
   Truck,
   UserPlus,
@@ -25,6 +25,8 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
+import { pickupConfig, cartonsForSku } from "./pickupConfig";
+import { buildPickupSlipHtml, formatSlipDate, type PickupLine } from "./pickupSlip";
 import type {
   BalanceRow,
   Holder,
@@ -365,6 +367,10 @@ export default function App() {
   const [productSku, setProductSku] = useState("");
   const [holderName, setHolderName] = useState("");
   const [holderType, setHolderType] = useState<HolderType>("technician");
+  const [holderPhone, setHolderPhone] = useState("");
+  const [holderAddress, setHolderAddress] = useState("");
+  const [holderEmail, setHolderEmail] = useState("");
+  const [editingHolderId, setEditingHolderId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [movementFilter, setMovementFilter] = useState<MovementType | "all">("all");
 
@@ -394,6 +400,10 @@ export default function App() {
   const [installDate, setInstallDate] = useState(weekEndingSunday(today()));
   const [installReference, setInstallReference] = useState("");
   const [installQty, setInstallQty] = useState<Record<string, string>>({});
+  const [pickupReleaseDate, setPickupReleaseDate] = useState(today());
+  const [pickupQty, setPickupQty] = useState<Record<string, string>>({});
+  const [pickupNotes, setPickupNotes] = useState("");
+  const [sendingSlip, setSendingSlip] = useState(false);
 
   const usingRemote = Boolean(supabase && !localOnly);
 
@@ -644,6 +654,30 @@ export default function App() {
     updateLocal((current) => ({ ...current, holders: [...current.holders, holder] }));
   }
 
+  async function updateHolder(holderId: string, updates: Partial<Holder>) {
+    if (usingRemote && supabase) {
+      const { data: updated, error: updateError } = await supabase
+        .from("holders")
+        .update(updates)
+        .eq("id", holderId)
+        .select("*")
+        .single();
+      if (updateError) throw updateError;
+      setData((current) =>
+        normalizeData({
+          ...current,
+          holders: current.holders.map((holder) => (holder.id === holderId ? (updated as Holder) : holder)),
+        }),
+      );
+      return;
+    }
+
+    updateLocal((current) => ({
+      ...current,
+      holders: current.holders.map((holder) => (holder.id === holderId ? { ...holder, ...updates } : holder)),
+    }));
+  }
+
   async function saveWarrantyJob(job: WarrantyJob) {
     if (usingRemote && supabase) {
       const { data: inserted, error: insertError } = await supabase
@@ -883,6 +917,92 @@ export default function App() {
     }
   }
 
+  function buildSlipForSelected() {
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    if (!electrician) return null;
+    const lines: PickupLine[] = activeProducts
+      .map((product) => ({
+        productName: product.name,
+        sku: product.sku,
+        quantity: Number(pickupQty[product.id]),
+        mode: "Pickup",
+      }))
+      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+    if (!lines.length) return null;
+
+    const html = buildPickupSlipHtml({
+      requestDate: formatSlipDate(today()),
+      releaseDate: formatSlipDate(pickupReleaseDate),
+      recipientName: electrician.name,
+      recipientAddress: electrician.address ?? "",
+      recipientPhone: electrician.phone ?? "",
+      lines,
+      notes: pickupNotes,
+      logoUrl: `${window.location.origin}${pickupConfig.logoPath}`,
+    });
+
+    const cc = [...pickupConfig.freight.cc];
+    if (electrician.email) cc.push(electrician.email);
+
+    return {
+      electrician,
+      html,
+      to: pickupConfig.freight.to,
+      cc,
+      subject: `Stock Release Request - ${electrician.name} - ${formatSlipDate(pickupReleaseDate)}`,
+    };
+  }
+
+  function handlePrintPickupSlip() {
+    setError(null);
+    const slip = buildSlipForSelected();
+    if (!slip) {
+      setError("Enter a quantity for at least one product first.");
+      return;
+    }
+    const preview = window.open("", "_blank", "width=900,height=760");
+    if (!preview) {
+      setError("Allow pop-ups for this site to preview or print the slip.");
+      return;
+    }
+    preview.document.write(slip.html);
+    preview.document.close();
+    preview.focus();
+    setTimeout(() => preview.print(), 300);
+  }
+
+  async function handleSendPickupSlip() {
+    setError(null);
+    setMessage(null);
+    const slip = buildSlipForSelected();
+    if (!slip) {
+      setError("Enter a quantity for at least one product first.");
+      return;
+    }
+
+    setSendingSlip(true);
+    try {
+      const response = await fetch("/api/send-pickup-slip", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to: slip.to, cc: slip.cc, subject: slip.subject, html: slip.html }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(result.error || "Could not send the pickup slip.");
+      }
+      setMessage(
+        `Pickup slip emailed to Specific Freight${slip.electrician.email ? ` (CC ${slip.electrician.name})` : ""}.`,
+      );
+      setPickupQty({});
+      setPickupNotes("");
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "Could not send the pickup slip.");
+    } finally {
+      setSendingSlip(false);
+    }
+  }
+
   async function removeHolder(holderId: string) {
     const holder = data.holders.find((item) => item.id === holderId);
     if (!holder) return;
@@ -1047,26 +1167,53 @@ export default function App() {
     }
   }
 
+  function resetHolderForm() {
+    setEditingHolderId(null);
+    setHolderName("");
+    setHolderType("technician");
+    setHolderPhone("");
+    setHolderAddress("");
+    setHolderEmail("");
+  }
+
+  function startEditHolder(holder: Holder) {
+    setEditingHolderId(holder.id);
+    setHolderName(holder.name);
+    setHolderType(holder.holder_type);
+    setHolderPhone(holder.phone ?? "");
+    setHolderAddress(holder.address ?? "");
+    setHolderEmail(holder.email ?? "");
+    setActiveTab("setup");
+  }
+
   async function handleAddHolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = holderName.trim();
     if (!name) return;
+
+    const fields = {
+      name,
+      holder_type: holderType,
+      phone: holderPhone.trim() || null,
+      address: holderAddress.trim() || null,
+      email: holderEmail.trim() || null,
+    };
 
     setSubmitting(true);
     setError(null);
     setMessage(null);
 
     try {
-      await saveHolder({
-        id: crypto.randomUUID(),
-        name,
-        holder_type: holderType,
-        active: true,
-      });
-      setHolderName("");
-      setMessage("Holder added.");
+      if (editingHolderId) {
+        await updateHolder(editingHolderId, fields);
+        setMessage(`${name} updated.`);
+      } else {
+        await saveHolder({ id: crypto.randomUUID(), active: true, ...fields });
+        setMessage(`${name} added.`);
+      }
+      resetHolderForm();
     } catch (holderError) {
-      setError(holderError instanceof Error ? holderError.message : "Could not add holder.");
+      setError(holderError instanceof Error ? holderError.message : "Could not save this holder.");
     } finally {
       setSubmitting(false);
     }
@@ -1340,12 +1487,9 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <div className="eyebrow">
-            <ShieldCheck size={16} />
-            Workbook-backed inventory
-          </div>
-          <h1>Stock Tracker</h1>
+        <div className="brand">
+          <img className="brand-logo" src="/assets/goldsure-logo.png" alt="" onError={(event) => (event.currentTarget.style.display = "none")} />
+          <h1>Goldsure Stock Tracker</h1>
         </div>
         <div className="topbar-actions">
           <span className={`status-pill ${usingRemote ? "cloud" : "local"}`}>
@@ -1487,8 +1631,17 @@ export default function App() {
               setInstallDate={setInstallDate}
               setInstallReference={setInstallReference}
               setInstallQty={setInstallQty}
+              pickupReleaseDate={pickupReleaseDate}
+              pickupQty={pickupQty}
+              pickupNotes={pickupNotes}
+              sendingSlip={sendingSlip}
+              setPickupReleaseDate={setPickupReleaseDate}
+              setPickupQty={setPickupQty}
+              setPickupNotes={setPickupNotes}
               onGiveStock={handleGiveStock}
               onRecordInstall={handleRecordInstall}
+              onPrintPickupSlip={handlePrintPickupSlip}
+              onSendPickupSlip={handleSendPickupSlip}
             />
           ) : null}
 
@@ -1549,6 +1702,10 @@ export default function App() {
               activeProducts={activeProducts}
               holderName={holderName}
               holderType={holderType}
+              holderPhone={holderPhone}
+              holderAddress={holderAddress}
+              holderEmail={holderEmail}
+              editingHolderId={editingHolderId}
               productName={productName}
               productSku={productSku}
               submitting={submitting}
@@ -1556,8 +1713,13 @@ export default function App() {
               onAddProduct={handleAddProduct}
               onRemoveHolder={removeHolder}
               onRemoveProduct={removeProduct}
+              onEditHolder={startEditHolder}
+              onCancelEdit={resetHolderForm}
               setHolderName={setHolderName}
               setHolderType={setHolderType}
+              setHolderPhone={setHolderPhone}
+              setHolderAddress={setHolderAddress}
+              setHolderEmail={setHolderEmail}
               setProductName={setProductName}
               setProductSku={setProductSku}
             />
@@ -2480,8 +2642,17 @@ function ElectriciansView({
   setInstallDate,
   setInstallReference,
   setInstallQty,
+  pickupReleaseDate,
+  pickupQty,
+  pickupNotes,
+  sendingSlip,
+  setPickupReleaseDate,
+  setPickupQty,
+  setPickupNotes,
   onGiveStock,
   onRecordInstall,
+  onPrintPickupSlip,
+  onSendPickupSlip,
 }: {
   technicians: Holder[];
   warehouses: Holder[];
@@ -2506,8 +2677,17 @@ function ElectriciansView({
   setInstallDate: (value: string) => void;
   setInstallReference: (value: string) => void;
   setInstallQty: (value: Record<string, string>) => void;
+  pickupReleaseDate: string;
+  pickupQty: Record<string, string>;
+  pickupNotes: string;
+  sendingSlip: boolean;
+  setPickupReleaseDate: (value: string) => void;
+  setPickupQty: (value: Record<string, string>) => void;
+  setPickupNotes: (value: string) => void;
   onGiveStock: (event: FormEvent<HTMLFormElement>) => void;
   onRecordInstall: (event: FormEvent<HTMLFormElement>) => void;
+  onPrintPickupSlip: () => void;
+  onSendPickupSlip: () => void;
 }) {
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
@@ -2790,6 +2970,74 @@ function ElectriciansView({
               <section className="panel">
                 <div className="panel-header">
                   <div>
+                    <h2>Request Stock — Pickup Slip</h2>
+                    <p>
+                      Emails a Stock Release Request to Specific Freight (Damien Doyle), CC {pickupConfig.freight.cc.join(", ")}
+                      {electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"}.
+                    </p>
+                  </div>
+                </div>
+                <div className="stack-form">
+                  <label>
+                    Requested release date
+                    <input
+                      type="date"
+                      value={pickupReleaseDate}
+                      onChange={(event) => setPickupReleaseDate(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <div className="qty-list">
+                    {activeProducts.map((product) => {
+                      const size = product.sku ? pickupConfig.cartonSizeBySku[product.sku] : undefined;
+                      const qty = Number(pickupQty[product.id]);
+                      const cartons = Number.isInteger(qty) && qty > 0 ? cartonsForSku(product.sku, qty) : "";
+                      return (
+                        <div className="qty-row" key={product.id}>
+                          <div className="qty-name">
+                            <strong>{product.name}</strong>
+                            <span>
+                              {size ? `${size} per carton` : "carton size not set"}
+                              {cartons ? ` · ${cartons} carton${cartons === "1" ? "" : "s"}` : ""}
+                            </span>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={pickupQty[product.id] ?? ""}
+                            onChange={(event) => setPickupQty({ ...pickupQty, [product.id]: event.target.value })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <label>
+                    Notes
+                    <textarea
+                      value={pickupNotes}
+                      onChange={(event) => setPickupNotes(event.target.value)}
+                      rows={2}
+                      placeholder="e.g. Pickup scheduled for Monday"
+                    />
+                  </label>
+                  <div className="form-actions">
+                    <button className="secondary-button" type="button" onClick={onPrintPickupSlip} disabled={sendingSlip}>
+                      <Printer size={18} />
+                      Preview / print
+                    </button>
+                    <button className="primary-button" type="button" onClick={onSendPickupSlip} disabled={sendingSlip}>
+                      <Truck size={18} />
+                      {sendingSlip ? "Sending…" : "Email to Specific Freight"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
                     <h2>Movement History</h2>
                     <p>{history.length.toLocaleString()} movements for {electrician.name}</p>
                   </div>
@@ -2936,11 +3184,60 @@ function ElectriciansView({
   );
 }
 
+function HolderRow({
+  holder,
+  submitting,
+  onEdit,
+  onRemove,
+}: {
+  holder: Holder;
+  submitting: boolean;
+  onEdit: (holder: Holder) => void;
+  onRemove: (holderId: string) => void;
+}) {
+  const contact = [holder.phone, holder.email, holder.address].filter(Boolean).join(" · ");
+  const icon =
+    holder.holder_type === "warehouse" ? <Factory size={17} /> : holder.holder_type === "technician" ? <Users size={17} /> : <Boxes size={17} />;
+  return (
+    <div className="entity-row" key={holder.id}>
+      {icon}
+      <div className="entity-info">
+        <strong>{holder.name}</strong>
+        <span>{contact || (holder.holder_type === "technician" ? "No contact details yet" : titleCase(holder.holder_type))}</span>
+      </div>
+      <button
+        className="icon-button"
+        type="button"
+        title={`Edit ${holder.name}`}
+        aria-label={`Edit ${holder.name}`}
+        disabled={submitting}
+        onClick={() => onEdit(holder)}
+      >
+        <Pencil size={16} />
+      </button>
+      <button
+        className="icon-button danger"
+        type="button"
+        title={`Remove ${holder.name}`}
+        aria-label={`Remove ${holder.name}`}
+        disabled={submitting}
+        onClick={() => onRemove(holder.id)}
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
 function SetupView({
   activeHolders,
   activeProducts,
   holderName,
   holderType,
+  holderPhone,
+  holderAddress,
+  holderEmail,
+  editingHolderId,
   productName,
   productSku,
   submitting,
@@ -2948,8 +3245,13 @@ function SetupView({
   onAddProduct,
   onRemoveHolder,
   onRemoveProduct,
+  onEditHolder,
+  onCancelEdit,
   setHolderName,
   setHolderType,
+  setHolderPhone,
+  setHolderAddress,
+  setHolderEmail,
   setProductName,
   setProductSku,
 }: {
@@ -2957,6 +3259,10 @@ function SetupView({
   activeProducts: Product[];
   holderName: string;
   holderType: HolderType;
+  holderPhone: string;
+  holderAddress: string;
+  holderEmail: string;
+  editingHolderId: string | null;
   productName: string;
   productSku: string;
   submitting: boolean;
@@ -2964,13 +3270,19 @@ function SetupView({
   onAddProduct: (event: FormEvent<HTMLFormElement>) => void;
   onRemoveHolder: (holderId: string) => void;
   onRemoveProduct: (productId: string) => void;
+  onEditHolder: (holder: Holder) => void;
+  onCancelEdit: () => void;
   setHolderName: (value: string) => void;
   setHolderType: (value: HolderType) => void;
+  setHolderPhone: (value: string) => void;
+  setHolderAddress: (value: string) => void;
+  setHolderEmail: (value: string) => void;
   setProductName: (value: string) => void;
   setProductSku: (value: string) => void;
 }) {
   const electricians = activeHolders.filter((holder) => holder.holder_type === "technician");
   const otherHolders = activeHolders.filter((holder) => holder.holder_type !== "technician");
+  const isElectrician = holderType === "technician";
 
   return (
     <section className="setup-grid">
@@ -2978,11 +3290,13 @@ function SetupView({
         <div className="panel-header">
           <div>
             <h2>Electricians &amp; Warehouses</h2>
-            <p>{electricians.length} electricians, {otherHolders.length} warehouses / other</p>
+            <p>
+              {editingHolderId ? "Editing details" : `${electricians.length} electricians, ${otherHolders.length} warehouses / other`}
+            </p>
           </div>
         </div>
 
-        <form className="setup-form" onSubmit={onAddHolder}>
+        <form className="holder-form" onSubmit={onAddHolder}>
           <label>
             Name
             <input
@@ -3000,10 +3314,38 @@ function SetupView({
               <option value="other">Other</option>
             </select>
           </label>
-          <button className="secondary-button" type="submit" disabled={submitting}>
-            <UserPlus size={18} />
-            Add
-          </button>
+          <label>
+            Phone
+            <input value={holderPhone} onChange={(event) => setHolderPhone(event.target.value)} placeholder="0400 000 000" />
+          </label>
+          <label>
+            Email {isElectrician ? <span className="hint-inline">for pickup slips</span> : null}
+            <input
+              type="email"
+              value={holderEmail}
+              onChange={(event) => setHolderEmail(event.target.value)}
+              placeholder="name@email.com"
+            />
+          </label>
+          <label className="full-width">
+            Address
+            <input
+              value={holderAddress}
+              onChange={(event) => setHolderAddress(event.target.value)}
+              placeholder="Street, suburb, state, postcode"
+            />
+          </label>
+          <div className="form-actions full-width">
+            <button className="secondary-button" type="submit" disabled={submitting}>
+              <UserPlus size={18} />
+              {editingHolderId ? "Save changes" : "Add"}
+            </button>
+            {editingHolderId ? (
+              <button className="ghost-button" type="button" onClick={onCancelEdit} disabled={submitting}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
         </form>
 
         {electricians.length ? (
@@ -3011,21 +3353,7 @@ function SetupView({
             <p className="list-label">Electricians</p>
             <div className="entity-list">
               {electricians.map((holder) => (
-                <div className="entity-row" key={holder.id}>
-                  <Users size={17} />
-                  <strong>{holder.name}</strong>
-                  <span>Electrician</span>
-                  <button
-                    className="icon-button danger"
-                    type="button"
-                    title={`Remove ${holder.name}`}
-                    aria-label={`Remove ${holder.name}`}
-                    disabled={submitting}
-                    onClick={() => onRemoveHolder(holder.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                <HolderRow key={holder.id} holder={holder} submitting={submitting} onEdit={onEditHolder} onRemove={onRemoveHolder} />
               ))}
             </div>
           </>
@@ -3036,21 +3364,7 @@ function SetupView({
             <p className="list-label">Warehouses &amp; other</p>
             <div className="entity-list">
               {otherHolders.map((holder) => (
-                <div className="entity-row" key={holder.id}>
-                  {holder.holder_type === "warehouse" ? <Factory size={17} /> : <Boxes size={17} />}
-                  <strong>{holder.name}</strong>
-                  <span>{titleCase(holder.holder_type)}</span>
-                  <button
-                    className="icon-button danger"
-                    type="button"
-                    title={`Remove ${holder.name}`}
-                    aria-label={`Remove ${holder.name}`}
-                    disabled={submitting}
-                    onClick={() => onRemoveHolder(holder.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                <HolderRow key={holder.id} holder={holder} submitting={submitting} onEdit={onEditHolder} onRemove={onRemoveHolder} />
               ))}
             </div>
           </>

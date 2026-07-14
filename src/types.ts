@@ -29,6 +29,9 @@ export type Holder = {
   name: string;
   holder_type: HolderType;
   active: boolean;
+  phone?: string | null;
+  address?: string | null;
+  email?: string | null;
   created_at?: string;
 };
 
