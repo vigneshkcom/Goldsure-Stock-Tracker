@@ -12,6 +12,7 @@ import {
   PackageCheck,
   PackagePlus,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -182,6 +183,47 @@ function formatDate(value: string) {
   });
 }
 
+// Products always list in this order, matched by SKU or name.
+const PRODUCT_ORDER = ["RH638-AC-RF", "RH638-B-RF", "RHRC2"];
+
+function productRank(product: Product) {
+  const key = `${product.sku ?? ""} ${product.name}`.toUpperCase();
+  const index = PRODUCT_ORDER.findIndex((token) => key.includes(token));
+  return index === -1 ? PRODUCT_ORDER.length : index;
+}
+
+function sortProducts(products: Product[]) {
+  return [...products].sort((a, b) => productRank(a) - productRank(b) || a.name.localeCompare(b.name));
+}
+
+// The Sunday that ends the week containing the given date.
+function weekEndingSunday(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  const day = date.getDay();
+  if (day !== 0) date.setDate(date.getDate() + (7 - day));
+  return date.toISOString().slice(0, 10);
+}
+
+function formatWeekEnding(value: string) {
+  return `Week ending ${new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}`;
+}
+
+// Recent week-ending Sundays, newest first, for the installation picker.
+function recentWeekEndings(count: number) {
+  const weeks: string[] = [];
+  const date = new Date(`${weekEndingSunday(today())}T00:00:00`);
+  for (let i = 0; i < count; i += 1) {
+    weeks.push(date.toISOString().slice(0, 10));
+    date.setDate(date.getDate() - 7);
+  }
+  return weeks;
+}
+
 function calculateBalances(movements: Movement[], condition: ProductCondition): BalanceRow[] {
   const balances = new Map<string, BalanceRow>();
 
@@ -334,7 +376,7 @@ export default function App() {
   const [giveDate, setGiveDate] = useState(today());
   const [giveReference, setGiveReference] = useState("");
   const [giveQty, setGiveQty] = useState<Record<string, string>>({});
-  const [installDate, setInstallDate] = useState(today());
+  const [installDate, setInstallDate] = useState(weekEndingSunday(today()));
   const [installReference, setInstallReference] = useState("");
   const [installQty, setInstallQty] = useState<Record<string, string>>({});
 
@@ -353,7 +395,7 @@ export default function App() {
     return map;
   }, [faultyBalances]);
 
-  const activeProducts = useMemo(() => data.products.filter((product) => product.active), [data.products]);
+  const activeProducts = useMemo(() => sortProducts(data.products.filter((product) => product.active)), [data.products]);
   const activeHolders = useMemo(() => sortHolders(data.holders.filter((holder) => holder.active)), [data.holders]);
   const warehouses = useMemo(
     () => activeHolders.filter((holder) => holder.holder_type === "warehouse"),
@@ -2488,6 +2530,37 @@ function ElectriciansView({
     ? activeProducts.reduce((total, product) => total + getBalance(goodBalanceMap, electrician.id, product.id), 0)
     : 0;
 
+  // Week-ending options: recent Sundays, plus any weeks that already have
+  // installs, plus whatever is currently selected.
+  const weekEndingOptions = (() => {
+    const weeks = new Set(recentWeekEndings(12));
+    history
+      .filter((movement) => movement.movement_type === "install")
+      .forEach((movement) => weeks.add(weekEndingSunday(movement.movement_date)));
+    if (installDate) weeks.add(installDate);
+    return Array.from(weeks).sort((a, b) => b.localeCompare(a));
+  })();
+
+  // Stock received by this electrician, day by day (opening balance + issues).
+  const givenRows = history
+    .filter((movement) => movement.to_holder_id === electrician?.id && getMovementCondition(movement) === "good")
+    .slice()
+    .reverse();
+
+  // Installations grouped by the week they fall in.
+  const installByWeek = (() => {
+    const groups = new Map<string, Map<string, number>>();
+    history
+      .filter((movement) => movement.from_holder_id === electrician?.id && movement.movement_type === "install")
+      .forEach((movement) => {
+        const week = weekEndingSunday(movement.movement_date);
+        const byProduct = groups.get(week) ?? new Map<string, number>();
+        byProduct.set(movement.product_id, (byProduct.get(movement.product_id) ?? 0) + movement.quantity);
+        groups.set(week, byProduct);
+      });
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  })();
+
   return (
     <section className="electricians-stack">
       <div className="electricians-grid">
@@ -2556,6 +2629,10 @@ function ElectriciansView({
                       Current stock &middot; Returned {totalReturned.toLocaleString()}
                     </p>
                   </div>
+                  <button className="secondary-button" type="button" onClick={() => window.print()}>
+                    <Printer size={18} />
+                    Print report
+                  </button>
                 </div>
                 <div className="responsive-table">
                   <table>
@@ -2649,8 +2726,14 @@ function ElectriciansView({
                   </div>
                   <form className="stack-form" onSubmit={onRecordInstall}>
                     <label>
-                      Date
-                      <input type="date" value={installDate} onChange={(event) => setInstallDate(event.target.value)} required />
+                      Week ending (Sunday)
+                      <select value={installDate} onChange={(event) => setInstallDate(event.target.value)} required>
+                        {weekEndingOptions.map((week) => (
+                          <option value={week} key={week}>
+                            {formatWeekEnding(week)}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <div className="qty-list">
                       {activeProducts.map((product) => (
@@ -2738,6 +2821,89 @@ function ElectriciansView({
                     </tbody>
                   </table>
                 </div>
+              </section>
+
+              <section className="print-only print-report">
+                <header className="print-head">
+                  <h1>Stock Report — {electrician.name}</h1>
+                  <p>Generated {formatDate(today())}</p>
+                </header>
+
+                <h2>Stock Received</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Product</th>
+                      <th>From</th>
+                      <th>Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {givenRows.map((movement) => (
+                      <tr key={movement.id}>
+                        <td>{formatDate(movement.movement_date)}</td>
+                        <td>{movementLabels[movement.movement_type]}</td>
+                        <td>{productName(movement.product_id)}</td>
+                        <td>{warehouseName(movement.from_holder_id) || "—"}</td>
+                        <td>{movement.quantity.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {givenRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5}>No stock received yet.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+
+                <h2>Installations By Week</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Week ending</th>
+                      <th>Product</th>
+                      <th>Installed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {installByWeek.flatMap(([week, byProduct]) =>
+                      Array.from(byProduct.entries()).map(([pid, qty], index) => (
+                        <tr key={`${week}:${pid}`}>
+                          <td>{index === 0 ? formatWeekEnding(week) : ""}</td>
+                          <td>{productName(pid)}</td>
+                          <td>{qty.toLocaleString()}</td>
+                        </tr>
+                      )),
+                    )}
+                    {installByWeek.length === 0 ? (
+                      <tr>
+                        <td colSpan={3}>No installations recorded yet.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+
+                <h2>Remaining Stock On Hand</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>On hand (good)</th>
+                      <th>Faulty held</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeProducts.map((product) => (
+                      <tr key={product.id}>
+                        <td>{product.name}</td>
+                        <td>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                        <td>{getBalance(faultyBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             </>
           ) : (

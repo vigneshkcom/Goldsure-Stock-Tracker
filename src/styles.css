@@ -831,6 +831,72 @@ textarea:focus {
   font-weight: 780;
 }
 
+.print-only {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .print-only,
+  .print-only * {
+    visibility: visible;
+  }
+
+  .print-only {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .print-report .print-head {
+    margin-bottom: 14px;
+  }
+
+  .print-report h1 {
+    font-size: 1.4rem;
+    margin: 0 0 4px;
+  }
+
+  .print-report .print-head p {
+    margin: 0;
+    color: #444;
+  }
+
+  .print-report h2 {
+    font-size: 1.05rem;
+    margin: 18px 0 6px;
+  }
+
+  .print-report table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .print-report th,
+  .print-report td {
+    border: 1px solid #999;
+    padding: 6px 8px;
+    text-align: left;
+  }
+
+  .print-report thead th {
+    background: #eee;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
