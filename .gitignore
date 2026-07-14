@@ -1,0 +1,12 @@
+.env
+.env.local
+node_modules/
+dist/
+.vite/
+.codex-work/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.tsv
+
