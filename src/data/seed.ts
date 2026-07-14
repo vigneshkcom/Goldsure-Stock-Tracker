@@ -205,5 +205,5 @@ export const workbookSeed: StockData = {
   products: workbookProducts,
   holders: workbookHolders,
   movements: workbookSnapshotMovements,
+  warrantyJobs: [],
 };
-

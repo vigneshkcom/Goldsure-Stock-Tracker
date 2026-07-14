@@ -2,18 +2,21 @@ import {
   AlertTriangle,
   Boxes,
   CheckCircle2,
+  ClipboardList,
   Cloud,
   Database,
   DownloadCloud,
   Factory,
   LogIn,
   LogOut,
+  PackageCheck,
   PackagePlus,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
+  Truck,
   UserPlus,
   Users,
   Wrench,
@@ -22,9 +25,22 @@ import type { Session } from "@supabase/supabase-js";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import type { BalanceRow, Holder, HolderType, Movement, MovementType, Product, StockData } from "./types";
+import type {
+  BalanceRow,
+  Holder,
+  HolderType,
+  Movement,
+  MovementType,
+  Product,
+  ProductCondition,
+  StockData,
+  WarrantyJob,
+  WarrantyJobStatus,
+} from "./types";
 
 const LOCAL_STORAGE_KEY = "stock-tracker-data-v1";
+
+const generalMovementTypes: MovementType[] = ["opening", "receive", "issue", "return", "install", "adjustment"];
 
 const movementLabels: Record<MovementType, string> = {
   opening: "Opening",
@@ -32,6 +48,8 @@ const movementLabels: Record<MovementType, string> = {
   issue: "Issue",
   return: "Return",
   install: "Install",
+  customer_post: "Post to customer",
+  faulty_collect: "Faulty collected",
   adjustment: "Adjustment",
 };
 
@@ -41,7 +59,21 @@ const movementTone: Record<MovementType, string> = {
   issue: "info",
   return: "warning",
   install: "negative",
+  customer_post: "info",
+  faulty_collect: "warning",
   adjustment: "neutral",
+};
+
+const conditionLabels: Record<ProductCondition, string> = {
+  good: "Good",
+  faulty: "Faulty",
+};
+
+const statusLabels: Record<WarrantyJobStatus, string> = {
+  open: "Open",
+  posted: "Posted",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -50,14 +82,35 @@ const emptyData: StockData = {
   products: [],
   holders: [],
   movements: [],
+  warrantyJobs: [],
 };
 
-function cloneLocalSeed(): StockData {
+function getMovementCondition(movement: Movement): ProductCondition {
+  return movement.product_condition ?? "good";
+}
+
+function normalizeData(value: Partial<StockData> | null | undefined): StockData {
   return {
+    products: value?.products ?? [],
+    holders: value?.holders ?? [],
+    movements: (value?.movements ?? []).map((movement) => ({
+      ...movement,
+      product_condition: movement.product_condition ?? "good",
+      warranty_job_id: movement.warranty_job_id ?? null,
+      job_number: movement.job_number ?? null,
+      customer_name: movement.customer_name ?? null,
+    })),
+    warrantyJobs: value?.warrantyJobs ?? [],
+  };
+}
+
+function cloneLocalSeed(): StockData {
+  return normalizeData({
     products: workbookSeed.products.map((product) => ({ ...product })),
     holders: workbookSeed.holders.map((holder) => ({ ...holder })),
-    movements: workbookSeed.movements.map((movement) => ({ ...movement })),
-  };
+    movements: workbookSeed.movements.map((movement) => ({ ...movement, product_condition: "good" })),
+    warrantyJobs: [],
+  });
 }
 
 function createRemoteSeed(userId: string): StockData {
@@ -80,12 +133,16 @@ function createRemoteSeed(userId: string): StockData {
     ...movement,
     id: crypto.randomUUID(),
     user_id: userId,
+    product_condition: "good" as ProductCondition,
     product_id: productMap.get(movement.product_id)!,
     from_holder_id: movement.from_holder_id ? holderMap.get(movement.from_holder_id)! : null,
     to_holder_id: movement.to_holder_id ? holderMap.get(movement.to_holder_id)! : null,
+    warranty_job_id: null,
+    job_number: null,
+    customer_name: null,
   }));
 
-  return { products, holders, movements };
+  return { products, holders, movements, warrantyJobs: [] };
 }
 
 function titleCase(value: string) {
@@ -100,7 +157,7 @@ function formatDate(value: string) {
   });
 }
 
-function calculateBalances(movements: Movement[]): BalanceRow[] {
+function calculateBalances(movements: Movement[], condition: ProductCondition): BalanceRow[] {
   const balances = new Map<string, BalanceRow>();
 
   const add = (holderId: string, productId: string, quantity: number) => {
@@ -111,6 +168,8 @@ function calculateBalances(movements: Movement[]): BalanceRow[] {
   };
 
   movements.forEach((movement) => {
+    if (getMovementCondition(movement) !== condition) return;
+
     if (movement.to_holder_id) {
       add(movement.to_holder_id, movement.product_id, movement.quantity);
     }
@@ -147,7 +206,9 @@ function loadLocalData(): StockData {
   }
 
   try {
-    return JSON.parse(saved) as StockData;
+    const parsed = normalizeData(JSON.parse(saved) as Partial<StockData>);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+    return parsed;
   } catch {
     const seeded = cloneLocalSeed();
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(seeded));
@@ -156,11 +217,47 @@ function loadLocalData(): StockData {
 }
 
 function saveLocalData(data: StockData) {
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalizeData(data)));
+}
+
+function getJobMovements(job: WarrantyJob, movements: Movement[]) {
+  return movements.filter(
+    (movement) => movement.warranty_job_id === job.id || (!movement.warranty_job_id && movement.job_number === job.job_number),
+  );
+}
+
+function sumJobMovement(job: WarrantyJob, movements: Movement[], movementType: MovementType, condition?: ProductCondition) {
+  return getJobMovements(job, movements)
+    .filter((movement) => movement.movement_type === movementType)
+    .filter((movement) => !condition || getMovementCondition(movement) === condition)
+    .reduce((total, movement) => total + movement.quantity, 0);
+}
+
+function describeMovementProducts(job: WarrantyJob, movements: Movement[], products: Product[], movementType: MovementType) {
+  const names = new Map(products.map((product) => [product.id, product.name]));
+  const totals = new Map<string, number>();
+
+  getJobMovements(job, movements)
+    .filter((movement) => movement.movement_type === movementType)
+    .forEach((movement) => {
+      totals.set(movement.product_id, (totals.get(movement.product_id) ?? 0) + movement.quantity);
+    });
+
+  return Array.from(totals.entries())
+    .map(([productId, quantity]) => `${quantity} ${names.get(productId) ?? "item"}`)
+    .join(", ");
+}
+
+function sortWarrantyJobs(jobs: WarrantyJob[]) {
+  return [...jobs].sort(
+    (a, b) =>
+      (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
+      b.job_number.localeCompare(a.job_number, undefined, { numeric: true }),
+  );
 }
 
 type AuthMode = "signin" | "signup";
-type Tab = "dashboard" | "movements" | "setup";
+type Tab = "dashboard" | "movements" | "warranty" | "setup";
 type AdjustmentDirection = "in" | "out";
 
 export default function App() {
@@ -194,14 +291,38 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [movementFilter, setMovementFilter] = useState<MovementType | "all">("all");
 
+  const [selectedWarrantyJobId, setSelectedWarrantyJobId] = useState("");
+  const [warrantySearch, setWarrantySearch] = useState("");
+  const [warrantyJobNumber, setWarrantyJobNumber] = useState("");
+  const [warrantyCustomerName, setWarrantyCustomerName] = useState("");
+  const [warrantyCustomerPhone, setWarrantyCustomerPhone] = useState("");
+  const [warrantyCustomerAddress, setWarrantyCustomerAddress] = useState("");
+  const [warrantyJobNotes, setWarrantyJobNotes] = useState("");
+  const [warrantyDate, setWarrantyDate] = useState(today());
+  const [postProductId, setPostProductId] = useState("");
+  const [postWarehouseId, setPostWarehouseId] = useState("");
+  const [postQuantity, setPostQuantity] = useState("1");
+  const [postReference, setPostReference] = useState("");
+  const [postTracking, setPostTracking] = useState("");
+  const [changeProductId, setChangeProductId] = useState("");
+  const [changeTechnicianId, setChangeTechnicianId] = useState("");
+  const [changeQuantity, setChangeQuantity] = useState("1");
+  const [changeNotes, setChangeNotes] = useState("");
+
   const usingRemote = Boolean(supabase && !localOnly && session);
 
-  const balances = useMemo(() => calculateBalances(data.movements), [data.movements]);
-  const balanceMap = useMemo(() => {
+  const goodBalances = useMemo(() => calculateBalances(data.movements, "good"), [data.movements]);
+  const faultyBalances = useMemo(() => calculateBalances(data.movements, "faulty"), [data.movements]);
+  const goodBalanceMap = useMemo(() => {
     const map = new Map<string, number>();
-    balances.forEach((row) => map.set(`${row.holderId}:${row.productId}`, row.quantity));
+    goodBalances.forEach((row) => map.set(`${row.holderId}:${row.productId}`, row.quantity));
     return map;
-  }, [balances]);
+  }, [goodBalances]);
+  const faultyBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    faultyBalances.forEach((row) => map.set(`${row.holderId}:${row.productId}`, row.quantity));
+    return map;
+  }, [faultyBalances]);
 
   const activeProducts = useMemo(() => data.products.filter((product) => product.active), [data.products]);
   const activeHolders = useMemo(() => sortHolders(data.holders.filter((holder) => holder.active)), [data.holders]);
@@ -213,16 +334,27 @@ export default function App() {
     () => activeHolders.filter((holder) => holder.holder_type === "technician"),
     [activeHolders],
   );
+  const sortedWarrantyJobs = useMemo(() => sortWarrantyJobs(data.warrantyJobs), [data.warrantyJobs]);
+  const selectedWarrantyJob = sortedWarrantyJobs.find((job) => job.id === selectedWarrantyJobId) ?? null;
+
+  const visibleDashboardHolders = useMemo(
+    () =>
+      activeHolders.filter((holder) => {
+        if (holder.holder_type !== "technician") return true;
+        return activeProducts.some((product) => getBalance(goodBalanceMap, holder.id, product.id) !== 0);
+      }),
+    [activeHolders, activeProducts, goodBalanceMap],
+  );
 
   const productTotals = useMemo(
     () =>
       activeProducts.map((product) => {
         const warehouseTotal = warehouses.reduce(
-          (total, holder) => total + getBalance(balanceMap, holder.id, product.id),
+          (total, holder) => total + getBalance(goodBalanceMap, holder.id, product.id),
           0,
         );
         const fieldTotal = technicians.reduce(
-          (total, holder) => total + getBalance(balanceMap, holder.id, product.id),
+          (total, holder) => total + getBalance(goodBalanceMap, holder.id, product.id),
           0,
         );
         return {
@@ -232,10 +364,11 @@ export default function App() {
           total: warehouseTotal + fieldTotal,
         };
       }),
-    [activeProducts, balanceMap, technicians, warehouses],
+    [activeProducts, goodBalanceMap, technicians, warehouses],
   );
 
   const totalStock = productTotals.reduce((total, row) => total + row.total, 0);
+  const totalFaultyStock = faultyBalances.reduce((total, row) => total + row.quantity, 0);
   const latestMovement = useMemo(
     () =>
       [...data.movements].sort(
@@ -245,7 +378,7 @@ export default function App() {
       )[0],
     [data.movements],
   );
-  const negativeBalances = balances.filter((row) => row.quantity < 0);
+  const negativeBalances = goodBalances.filter((row) => row.quantity < 0);
 
   const filteredMovements = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -262,7 +395,17 @@ export default function App() {
         const product = data.products.find((item) => item.id === movement.product_id)?.name ?? "";
         const from = data.holders.find((item) => item.id === movement.from_holder_id)?.name ?? "";
         const to = data.holders.find((item) => item.id === movement.to_holder_id)?.name ?? "";
-        const haystack = [product, from, to, movement.reference, movement.tracking, movement.notes]
+        const haystack = [
+          product,
+          from,
+          to,
+          movement.reference,
+          movement.tracking,
+          movement.notes,
+          movement.job_number,
+          movement.customer_name,
+          conditionLabels[getMovementCondition(movement)],
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -317,48 +460,71 @@ export default function App() {
   }, [localOnly]);
 
   useEffect(() => {
-    if (!productId && activeProducts[0]) {
-      setProductId(activeProducts[0].id);
-    }
-  }, [activeProducts, productId]);
+    if (!productId && activeProducts[0]) setProductId(activeProducts[0].id);
+    if (!postProductId && activeProducts[0]) setPostProductId(activeProducts[0].id);
+    if (!changeProductId && activeProducts[0]) setChangeProductId(activeProducts[0].id);
+  }, [activeProducts, changeProductId, postProductId, productId]);
 
   useEffect(() => {
-    if (!fromHolderId && warehouses[0]) {
-      setFromHolderId(warehouses[0].id);
-    }
-    if (!toHolderId && technicians[0]) {
-      setToHolderId(technicians[0].id);
-    }
+    if (!fromHolderId && warehouses[0]) setFromHolderId(warehouses[0].id);
+    if (!toHolderId && technicians[0]) setToHolderId(technicians[0].id);
   }, [fromHolderId, technicians, toHolderId, warehouses]);
+
+  useEffect(() => {
+    const stockedWarehouse = warehouses.find((holder) => getBalance(goodBalanceMap, holder.id, postProductId) > 0);
+    if (!postWarehouseId || getBalance(goodBalanceMap, postWarehouseId, postProductId) <= 0) {
+      setPostWarehouseId(stockedWarehouse?.id ?? warehouses[0]?.id ?? "");
+    }
+  }, [goodBalanceMap, postProductId, postWarehouseId, warehouses]);
+
+  useEffect(() => {
+    const stockedTechnician = technicians.find((holder) => getBalance(goodBalanceMap, holder.id, changeProductId) > 0);
+    if (!changeTechnicianId || getBalance(goodBalanceMap, changeTechnicianId, changeProductId) <= 0) {
+      setChangeTechnicianId(stockedTechnician?.id ?? technicians[0]?.id ?? "");
+    }
+  }, [changeProductId, changeTechnicianId, goodBalanceMap, technicians]);
+
+  useEffect(() => {
+    if (!selectedWarrantyJobId && sortedWarrantyJobs[0]) {
+      setSelectedWarrantyJobId(sortedWarrantyJobs[0].id);
+    }
+  }, [selectedWarrantyJobId, sortedWarrantyJobs]);
 
   async function loadRemoteData(userId: string) {
     if (!supabase) return;
     setLoading(true);
     setError(null);
 
-    const [productsResult, holdersResult, movementsResult] = await Promise.all([
+    const [productsResult, holdersResult, movementsResult, warrantyJobsResult] = await Promise.all([
       supabase.from("products").select("*").eq("user_id", userId).order("name"),
       supabase.from("holders").select("*").eq("user_id", userId).order("holder_type").order("name"),
       supabase.from("stock_movements").select("*").eq("user_id", userId).order("movement_date", { ascending: false }),
+      supabase.from("warranty_jobs").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
     ]);
 
-    const firstError = productsResult.error ?? holdersResult.error ?? movementsResult.error;
+    const firstError = productsResult.error ?? holdersResult.error ?? movementsResult.error ?? warrantyJobsResult.error;
     if (firstError) {
-      setError(firstError.message);
+      setError(`${firstError.message}. If this mentions warranty_jobs or product_condition, run the updated schema SQL in Supabase.`);
     } else {
-      setData({
-        products: (productsResult.data ?? []) as Product[],
-        holders: (holdersResult.data ?? []) as Holder[],
-        movements: (movementsResult.data ?? []) as Movement[],
-      });
+      setData(
+        normalizeData({
+          products: (productsResult.data ?? []) as Product[],
+          holders: (holdersResult.data ?? []) as Holder[],
+          movements: (movementsResult.data ?? []) as Movement[],
+          warrantyJobs: (warrantyJobsResult.data ?? []) as WarrantyJob[],
+        }),
+      );
     }
 
     setLoading(false);
   }
 
-  function updateLocal(next: StockData) {
-    setData(next);
-    saveLocalData(next);
+  function updateLocal(next: StockData | ((current: StockData) => StockData)) {
+    setData((current) => {
+      const normalized = normalizeData(typeof next === "function" ? next(current) : next);
+      saveLocalData(normalized);
+      return normalized;
+    });
   }
 
   async function saveProduct(product: Product) {
@@ -369,11 +535,11 @@ export default function App() {
         .select("*")
         .single();
       if (insertError) throw insertError;
-      setData((current) => ({ ...current, products: [...current.products, inserted as Product] }));
+      setData((current) => normalizeData({ ...current, products: [...current.products, inserted as Product] }));
       return;
     }
 
-    updateLocal({ ...data, products: [...data.products, product] });
+    updateLocal((current) => ({ ...current, products: [...current.products, product] }));
   }
 
   async function saveHolder(holder: Holder) {
@@ -384,26 +550,79 @@ export default function App() {
         .select("*")
         .single();
       if (insertError) throw insertError;
-      setData((current) => ({ ...current, holders: [...current.holders, inserted as Holder] }));
+      setData((current) => normalizeData({ ...current, holders: [...current.holders, inserted as Holder] }));
       return;
     }
 
-    updateLocal({ ...data, holders: [...data.holders, holder] });
+    updateLocal((current) => ({ ...current, holders: [...current.holders, holder] }));
   }
 
-  async function saveMovement(movement: Movement) {
+  async function saveWarrantyJob(job: WarrantyJob) {
     if (usingRemote && supabase && session) {
       const { data: inserted, error: insertError } = await supabase
-        .from("stock_movements")
-        .insert({ ...movement, user_id: session.user.id })
+        .from("warranty_jobs")
+        .insert({ ...job, user_id: session.user.id })
         .select("*")
         .single();
       if (insertError) throw insertError;
-      setData((current) => ({ ...current, movements: [inserted as Movement, ...current.movements] }));
+      const saved = inserted as WarrantyJob;
+      setData((current) => normalizeData({ ...current, warrantyJobs: [saved, ...current.warrantyJobs] }));
+      return saved;
+    }
+
+    updateLocal((current) => ({ ...current, warrantyJobs: [job, ...current.warrantyJobs] }));
+    return job;
+  }
+
+  async function updateWarrantyJob(jobId: string, updates: Partial<WarrantyJob>) {
+    if (usingRemote && supabase) {
+      const { data: updated, error: updateError } = await supabase
+        .from("warranty_jobs")
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq("id", jobId)
+        .select("*")
+        .single();
+      if (updateError) throw updateError;
+      setData((current) =>
+        normalizeData({
+          ...current,
+          warrantyJobs: current.warrantyJobs.map((job) => (job.id === jobId ? (updated as WarrantyJob) : job)),
+        }),
+      );
       return;
     }
 
-    updateLocal({ ...data, movements: [movement, ...data.movements] });
+    updateLocal((current) => ({
+      ...current,
+      warrantyJobs: current.warrantyJobs.map((job) =>
+        job.id === jobId ? { ...job, ...updates, updated_at: new Date().toISOString() } : job,
+      ),
+    }));
+  }
+
+  async function saveMovements(movements: Movement[]) {
+    const prepared = movements.map((movement) => ({
+      ...movement,
+      product_condition: movement.product_condition ?? "good",
+    }));
+
+    if (usingRemote && supabase && session) {
+      const { data: inserted, error: insertError } = await supabase
+        .from("stock_movements")
+        .insert(prepared.map((movement) => ({ ...movement, user_id: session.user.id })))
+        .select("*");
+      if (insertError) throw insertError;
+      setData((current) =>
+        normalizeData({ ...current, movements: [...((inserted ?? []) as Movement[]), ...current.movements] }),
+      );
+      return;
+    }
+
+    updateLocal((current) => ({ ...current, movements: [...prepared, ...current.movements] }));
+  }
+
+  async function saveMovement(movement: Movement) {
+    await saveMovements([movement]);
   }
 
   async function deleteMovement(movementId: string) {
@@ -415,15 +634,17 @@ export default function App() {
       if (usingRemote && supabase) {
         const { error: deleteError } = await supabase.from("stock_movements").delete().eq("id", movementId);
         if (deleteError) throw deleteError;
-        setData((current) => ({
+        setData((current) =>
+          normalizeData({
+            ...current,
+            movements: current.movements.filter((movement) => movement.id !== movementId),
+          }),
+        );
+      } else {
+        updateLocal((current) => ({
           ...current,
           movements: current.movements.filter((movement) => movement.id !== movementId),
         }));
-      } else {
-        updateLocal({
-          ...data,
-          movements: data.movements.filter((movement) => movement.id !== movementId),
-        });
       }
 
       setMessage("Movement deleted.");
@@ -588,7 +809,7 @@ export default function App() {
     }
 
     if (fromId) {
-      const available = getBalance(balanceMap, fromId, productId);
+      const available = getBalance(goodBalanceMap, fromId, productId);
       if (available < parsedQuantity) {
         const holder = data.holders.find((item) => item.id === fromId)?.name ?? "Selected holder";
         setError(`${holder} has ${available} available for this product.`);
@@ -603,10 +824,14 @@ export default function App() {
         id: crypto.randomUUID(),
         movement_date: movementDate,
         movement_type: movementType,
+        product_condition: "good",
         product_id: productId,
         quantity: parsedQuantity,
         from_holder_id: fromId,
         to_holder_id: toId,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
         reference: reference.trim() || null,
         tracking: tracking.trim() || null,
         notes: notes.trim() || null,
@@ -621,6 +846,180 @@ export default function App() {
       setActiveTab("dashboard");
     } catch (movementError) {
       setError(movementError instanceof Error ? movementError.message : "Could not save movement.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCreateWarrantyJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const jobNumber = warrantyJobNumber.trim();
+    const customerName = warrantyCustomerName.trim();
+
+    if (!jobNumber || !customerName) {
+      setError("Enter a job number and customer name.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const saved = await saveWarrantyJob({
+        id: crypto.randomUUID(),
+        job_number: jobNumber,
+        customer_name: customerName,
+        customer_phone: warrantyCustomerPhone.trim() || null,
+        customer_address: warrantyCustomerAddress.trim() || null,
+        status: "open",
+        notes: warrantyJobNotes.trim() || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      setSelectedWarrantyJobId(saved.id);
+      setWarrantyJobNumber("");
+      setWarrantyCustomerName("");
+      setWarrantyCustomerPhone("");
+      setWarrantyCustomerAddress("");
+      setWarrantyJobNotes("");
+      setMessage("Warranty job created.");
+    } catch (jobError) {
+      setError(jobError instanceof Error ? jobError.message : "Could not create warranty job.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handlePostStockToCustomer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWarrantyJob) {
+      setError("Select a warranty job first.");
+      return;
+    }
+
+    const parsedQuantity = Number(postQuantity);
+    if (!postProductId || !postWarehouseId || !Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      setError("Choose a product, warehouse, and whole quantity above zero.");
+      return;
+    }
+
+    const available = getBalance(goodBalanceMap, postWarehouseId, postProductId);
+    if (available < parsedQuantity) {
+      const holder = data.holders.find((item) => item.id === postWarehouseId)?.name ?? "Selected warehouse";
+      setError(`${holder} has ${available} available for this product.`);
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await saveMovement({
+        id: crypto.randomUUID(),
+        movement_date: warrantyDate,
+        movement_type: "customer_post",
+        product_condition: "good",
+        product_id: postProductId,
+        quantity: parsedQuantity,
+        from_holder_id: postWarehouseId,
+        to_holder_id: null,
+        warranty_job_id: selectedWarrantyJob.id,
+        job_number: selectedWarrantyJob.job_number,
+        customer_name: selectedWarrantyJob.customer_name,
+        reference: postReference.trim() || null,
+        tracking: postTracking.trim() || null,
+        notes: "Posted replacement stock to customer.",
+        created_at: new Date().toISOString(),
+      });
+
+      if (selectedWarrantyJob.status === "open") {
+        await updateWarrantyJob(selectedWarrantyJob.id, { status: "posted" });
+      }
+
+      setPostQuantity("1");
+      setPostReference("");
+      setPostTracking("");
+      setMessage("Customer stock posting saved.");
+    } catch (postError) {
+      setError(postError instanceof Error ? postError.message : "Could not post stock to customer.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRecordChangeover(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWarrantyJob) {
+      setError("Select a warranty job first.");
+      return;
+    }
+
+    const parsedQuantity = Number(changeQuantity);
+    if (!changeProductId || !changeTechnicianId || !Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      setError("Choose an electrician, product, and whole quantity above zero.");
+      return;
+    }
+
+    const available = getBalance(goodBalanceMap, changeTechnicianId, changeProductId);
+    if (available < parsedQuantity) {
+      const holder = data.holders.find((item) => item.id === changeTechnicianId)?.name ?? "Selected electrician";
+      setError(`${holder} has ${available} good stock available for this product.`);
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    const createdAt = new Date().toISOString();
+    const common = {
+      movement_date: warrantyDate,
+      product_id: changeProductId,
+      quantity: parsedQuantity,
+      warranty_job_id: selectedWarrantyJob.id,
+      job_number: selectedWarrantyJob.job_number,
+      customer_name: selectedWarrantyJob.customer_name,
+      reference: selectedWarrantyJob.job_number,
+      tracking: null,
+      created_at: createdAt,
+    };
+
+    try {
+      await saveMovements([
+        {
+          ...common,
+          id: crypto.randomUUID(),
+          movement_type: "install",
+          product_condition: "good",
+          from_holder_id: changeTechnicianId,
+          to_holder_id: null,
+          notes: changeNotes.trim() || "Warranty changeover: good stock installed.",
+        },
+        {
+          ...common,
+          id: crypto.randomUUID(),
+          movement_type: "faulty_collect",
+          product_condition: "faulty",
+          from_holder_id: null,
+          to_holder_id: changeTechnicianId,
+          notes: changeNotes.trim() || "Faulty alarm collected and held by electrician.",
+        },
+      ]);
+
+      const posted = sumJobMovement(selectedWarrantyJob, data.movements, "customer_post", "good");
+      const installed = sumJobMovement(selectedWarrantyJob, data.movements, "install", "good") + parsedQuantity;
+      if (selectedWarrantyJob.status !== "cancelled" && posted > 0 && installed >= posted) {
+        await updateWarrantyJob(selectedWarrantyJob.id, { status: "completed" });
+      }
+
+      setChangeQuantity("1");
+      setChangeNotes("");
+      setMessage("Warranty changeover recorded.");
+    } catch (changeError) {
+      setError(changeError instanceof Error ? changeError.message : "Could not record changeover.");
     } finally {
       setSubmitting(false);
     }
@@ -713,6 +1112,10 @@ export default function App() {
           <RefreshCw size={18} />
           Movements
         </button>
+        <button className={activeTab === "warranty" ? "active" : ""} type="button" onClick={() => setActiveTab("warranty")}>
+          <ClipboardList size={18} />
+          Warranty
+        </button>
         <button className={activeTab === "setup" ? "active" : ""} type="button" onClick={() => setActiveTab("setup")}>
           <Wrench size={18} />
           Setup
@@ -742,14 +1145,16 @@ export default function App() {
 
           {activeTab === "dashboard" ? (
             <DashboardView
-              activeHolders={activeHolders}
+              activeHolders={visibleDashboardHolders}
               activeProducts={activeProducts}
-              balanceMap={balanceMap}
+              balanceMap={goodBalanceMap}
+              holderCount={activeHolders.length}
               latestMovement={latestMovement}
               movementCount={data.movements.length}
               negativeBalances={negativeBalances}
               productTotals={productTotals}
               totalStock={totalStock}
+              totalFaultyStock={totalFaultyStock}
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
               submitting={submitting}
@@ -762,7 +1167,7 @@ export default function App() {
                 activeHolders={activeHolders}
                 activeProducts={activeProducts}
                 adjustmentDirection={adjustmentDirection}
-                balanceMap={balanceMap}
+                balanceMap={goodBalanceMap}
                 fromHolderId={fromHolderId}
                 movementDate={movementDate}
                 movementType={movementType}
@@ -801,6 +1206,57 @@ export default function App() {
             </section>
           ) : null}
 
+          {activeTab === "warranty" ? (
+            <WarrantyView
+              activeProducts={activeProducts}
+              changeProductId={changeProductId}
+              changeQuantity={changeQuantity}
+              changeTechnicianId={changeTechnicianId}
+              changeNotes={changeNotes}
+              customerAddress={warrantyCustomerAddress}
+              customerName={warrantyCustomerName}
+              customerPhone={warrantyCustomerPhone}
+              data={data}
+              faultyBalanceMap={faultyBalanceMap}
+              goodBalanceMap={goodBalanceMap}
+              jobNotes={warrantyJobNotes}
+              jobNumber={warrantyJobNumber}
+              postProductId={postProductId}
+              postQuantity={postQuantity}
+              postReference={postReference}
+              postTracking={postTracking}
+              postWarehouseId={postWarehouseId}
+              selectedJob={selectedWarrantyJob}
+              selectedJobId={selectedWarrantyJobId}
+              searchTerm={warrantySearch}
+              submitting={submitting}
+              technicians={technicians}
+              warrantyDate={warrantyDate}
+              warehouses={warehouses}
+              jobs={sortedWarrantyJobs}
+              onCreateJob={handleCreateWarrantyJob}
+              onPostStock={handlePostStockToCustomer}
+              onRecordChangeover={handleRecordChangeover}
+              setChangeNotes={setChangeNotes}
+              setChangeProductId={setChangeProductId}
+              setChangeQuantity={setChangeQuantity}
+              setChangeTechnicianId={setChangeTechnicianId}
+              setCustomerAddress={setWarrantyCustomerAddress}
+              setCustomerName={setWarrantyCustomerName}
+              setCustomerPhone={setWarrantyCustomerPhone}
+              setJobNotes={setWarrantyJobNotes}
+              setJobNumber={setWarrantyJobNumber}
+              setPostProductId={setPostProductId}
+              setPostQuantity={setPostQuantity}
+              setPostReference={setPostReference}
+              setPostTracking={setPostTracking}
+              setPostWarehouseId={setPostWarehouseId}
+              setSearchTerm={setWarrantySearch}
+              setSelectedJobId={setSelectedWarrantyJobId}
+              setWarrantyDate={setWarrantyDate}
+            />
+          ) : null}
+
           {activeTab === "setup" ? (
             <SetupView
               activeHolders={activeHolders}
@@ -835,11 +1291,13 @@ function DashboardView({
   activeHolders,
   activeProducts,
   balanceMap,
+  holderCount,
   latestMovement,
   movementCount,
   negativeBalances,
   productTotals,
   totalStock,
+  totalFaultyStock,
   seedWorkbookSnapshot,
   canSeed,
   submitting,
@@ -847,11 +1305,13 @@ function DashboardView({
   activeHolders: Holder[];
   activeProducts: Product[];
   balanceMap: Map<string, number>;
+  holderCount: number;
   latestMovement: Movement | undefined;
   movementCount: number;
   negativeBalances: BalanceRow[];
   productTotals: ProductTotalRow[];
   totalStock: number;
+  totalFaultyStock: number;
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
@@ -861,18 +1321,18 @@ function DashboardView({
       <div className="metric-grid">
         <div className="metric-card">
           <Boxes size={22} />
-          <span>Total Stock</span>
+          <span>Good Stock</span>
           <strong>{totalStock.toLocaleString()}</strong>
         </div>
         <div className="metric-card">
-          <PackagePlus size={22} />
-          <span>Products</span>
-          <strong>{activeProducts.length}</strong>
+          <AlertTriangle size={22} />
+          <span>Faulty Held</span>
+          <strong>{totalFaultyStock.toLocaleString()}</strong>
         </div>
         <div className="metric-card">
           <Users size={22} />
           <span>Holders</span>
-          <strong>{activeHolders.length}</strong>
+          <strong>{holderCount}</strong>
         </div>
         <div className="metric-card">
           <RefreshCw size={22} />
@@ -933,7 +1393,11 @@ function DashboardView({
         <div className="panel-header">
           <div>
             <h2>Stock On Hand</h2>
-            <p>{negativeBalances.length ? `${negativeBalances.length} balance checks need review` : "All balances are zero or above"}</p>
+            <p>
+              {negativeBalances.length
+                ? `${negativeBalances.length} balance checks need review`
+                : "Zero-stock electricians are hidden from this dashboard"}
+            </p>
           </div>
         </div>
 
@@ -1038,8 +1502,17 @@ function MovementForm({
   setTracking: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const showFrom = movementType === "issue" || movementType === "return" || movementType === "install" || (movementType === "adjustment" && adjustmentDirection === "out");
-  const showTo = movementType === "opening" || movementType === "receive" || movementType === "issue" || movementType === "return" || (movementType === "adjustment" && adjustmentDirection === "in");
+  const showFrom =
+    movementType === "issue" ||
+    movementType === "return" ||
+    movementType === "install" ||
+    (movementType === "adjustment" && adjustmentDirection === "out");
+  const showTo =
+    movementType === "opening" ||
+    movementType === "receive" ||
+    movementType === "issue" ||
+    movementType === "return" ||
+    (movementType === "adjustment" && adjustmentDirection === "in");
   const fromOptions =
     movementType === "issue" ? warehouses : movementType === "return" || movementType === "install" ? technicians : activeHolders;
   const toOptions =
@@ -1064,7 +1537,7 @@ function MovementForm({
         <label>
           Movement
           <select value={movementType} onChange={(event) => setMovementType(event.target.value as MovementType)}>
-            {(Object.keys(movementLabels) as MovementType[]).map((type) => (
+            {generalMovementTypes.map((type) => (
               <option value={type} key={type}>
                 {movementLabels[type]}
               </option>
@@ -1164,6 +1637,380 @@ function MovementForm({
   );
 }
 
+function WarrantyView({
+  activeProducts,
+  changeProductId,
+  changeQuantity,
+  changeTechnicianId,
+  changeNotes,
+  customerAddress,
+  customerName,
+  customerPhone,
+  data,
+  faultyBalanceMap,
+  goodBalanceMap,
+  jobNotes,
+  jobNumber,
+  jobs,
+  postProductId,
+  postQuantity,
+  postReference,
+  postTracking,
+  postWarehouseId,
+  selectedJob,
+  selectedJobId,
+  searchTerm,
+  submitting,
+  technicians,
+  warrantyDate,
+  warehouses,
+  onCreateJob,
+  onPostStock,
+  onRecordChangeover,
+  setChangeNotes,
+  setChangeProductId,
+  setChangeQuantity,
+  setChangeTechnicianId,
+  setCustomerAddress,
+  setCustomerName,
+  setCustomerPhone,
+  setJobNotes,
+  setJobNumber,
+  setPostProductId,
+  setPostQuantity,
+  setPostReference,
+  setPostTracking,
+  setPostWarehouseId,
+  setSearchTerm,
+  setSelectedJobId,
+  setWarrantyDate,
+}: {
+  activeProducts: Product[];
+  changeProductId: string;
+  changeQuantity: string;
+  changeTechnicianId: string;
+  changeNotes: string;
+  customerAddress: string;
+  customerName: string;
+  customerPhone: string;
+  data: StockData;
+  faultyBalanceMap: Map<string, number>;
+  goodBalanceMap: Map<string, number>;
+  jobNotes: string;
+  jobNumber: string;
+  jobs: WarrantyJob[];
+  postProductId: string;
+  postQuantity: string;
+  postReference: string;
+  postTracking: string;
+  postWarehouseId: string;
+  selectedJob: WarrantyJob | null;
+  selectedJobId: string;
+  searchTerm: string;
+  submitting: boolean;
+  technicians: Holder[];
+  warrantyDate: string;
+  warehouses: Holder[];
+  onCreateJob: (event: FormEvent<HTMLFormElement>) => void;
+  onPostStock: (event: FormEvent<HTMLFormElement>) => void;
+  onRecordChangeover: (event: FormEvent<HTMLFormElement>) => void;
+  setChangeNotes: (value: string) => void;
+  setChangeProductId: (value: string) => void;
+  setChangeQuantity: (value: string) => void;
+  setChangeTechnicianId: (value: string) => void;
+  setCustomerAddress: (value: string) => void;
+  setCustomerName: (value: string) => void;
+  setCustomerPhone: (value: string) => void;
+  setJobNotes: (value: string) => void;
+  setJobNumber: (value: string) => void;
+  setPostProductId: (value: string) => void;
+  setPostQuantity: (value: string) => void;
+  setPostReference: (value: string) => void;
+  setPostTracking: (value: string) => void;
+  setPostWarehouseId: (value: string) => void;
+  setSearchTerm: (value: string) => void;
+  setSelectedJobId: (value: string) => void;
+  setWarrantyDate: (value: string) => void;
+}) {
+  const term = searchTerm.trim().toLowerCase();
+  const filteredJobs = jobs.filter((job) =>
+    [job.job_number, job.customer_name, job.customer_phone, job.customer_address, job.status]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(term),
+  );
+
+  const openJobs = jobs.filter((job) => job.status !== "completed" && job.status !== "cancelled").length;
+  const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
+  const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
+  const faultyTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "faulty_collect", "faulty"), 0);
+  const selectedPosted = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "customer_post") : "";
+  const selectedInstalled = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "install") : "";
+  const selectedFaulty = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "faulty_collect") : "";
+
+  return (
+    <section className="warranty-stack">
+      <div className="metric-grid">
+        <div className="metric-card">
+          <ClipboardList size={22} />
+          <span>Warranty Jobs</span>
+          <strong>{jobs.length}</strong>
+        </div>
+        <div className="metric-card">
+          <Truck size={22} />
+          <span>Posted</span>
+          <strong>{postedTotal.toLocaleString()}</strong>
+        </div>
+        <div className="metric-card">
+          <PackageCheck size={22} />
+          <span>Installed</span>
+          <strong>{installedTotal.toLocaleString()}</strong>
+        </div>
+        <div className="metric-card">
+          <AlertTriangle size={22} />
+          <span>Faulty Held</span>
+          <strong>{faultyTotal.toLocaleString()}</strong>
+        </div>
+      </div>
+
+      <section className="warranty-grid">
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Create Warranty Job</h2>
+              <p>{openJobs} open or posted jobs</p>
+            </div>
+          </div>
+
+          <form className="warranty-form" onSubmit={onCreateJob}>
+            <label>
+              Job number
+              <input value={jobNumber} onChange={(event) => setJobNumber(event.target.value)} required />
+            </label>
+            <label>
+              Customer
+              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required />
+            </label>
+            <label>
+              Phone
+              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+            </label>
+            <label className="full-width">
+              Address
+              <input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
+            </label>
+            <label className="full-width">
+              Notes
+              <textarea value={jobNotes} onChange={(event) => setJobNotes(event.target.value)} rows={3} />
+            </label>
+            <button className="primary-button full-width" type="submit" disabled={submitting}>
+              <Plus size={18} />
+              Create job
+            </button>
+          </form>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header ledger-header">
+            <div>
+              <h2>Job List</h2>
+              <p>{filteredJobs.length} visible jobs</p>
+            </div>
+            <label className="search-box">
+              <Search size={17} />
+              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search jobs" />
+            </label>
+          </div>
+
+          <div className="job-list">
+            {filteredJobs.map((job) => {
+              const posted = sumJobMovement(job, data.movements, "customer_post", "good");
+              const installed = sumJobMovement(job, data.movements, "install", "good");
+              const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
+              return (
+                <button
+                  className={selectedJobId === job.id ? "job-row active" : "job-row"}
+                  type="button"
+                  onClick={() => setSelectedJobId(job.id)}
+                  key={job.id}
+                >
+                  <span>
+                    <strong>{job.job_number}</strong>
+                    {job.customer_name}
+                  </span>
+                  <span className={`status-chip ${job.status === "completed" ? "ok" : "attention"}`}>
+                    {statusLabels[job.status]}
+                  </span>
+                  <span className="job-counts">
+                    Posted {posted} | Installed {installed} | Faulty {faulty}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </section>
+
+      {selectedJob ? (
+        <section className="warranty-grid">
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>{selectedJob.job_number}</h2>
+                <p>{selectedJob.customer_name}</p>
+              </div>
+              <span className={`status-chip ${selectedJob.status === "completed" ? "ok" : "attention"}`}>
+                {statusLabels[selectedJob.status]}
+              </span>
+            </div>
+            <div className="job-detail">
+              <div>
+                <span>Address</span>
+                <strong>{selectedJob.customer_address || "Not entered"}</strong>
+              </div>
+              <div>
+                <span>Phone</span>
+                <strong>{selectedJob.customer_phone || "Not entered"}</strong>
+              </div>
+              <div>
+                <span>Posted to customer</span>
+                <strong>{selectedPosted || "None"}</strong>
+              </div>
+              <div>
+                <span>Installed by electrician</span>
+                <strong>{selectedInstalled || "None"}</strong>
+              </div>
+              <div>
+                <span>Faulty in electrician inventory</span>
+                <strong>{selectedFaulty || "None"}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Post Stock To Customer</h2>
+                <p>Moves good stock out of warehouse and links it to this job.</p>
+              </div>
+            </div>
+            <form className="warranty-form" onSubmit={onPostStock}>
+              <label>
+                Date
+                <input type="date" value={warrantyDate} onChange={(event) => setWarrantyDate(event.target.value)} required />
+              </label>
+              <label>
+                Warehouse
+                <select value={postWarehouseId} onChange={(event) => setPostWarehouseId(event.target.value)} required>
+                  {warehouses.map((holder) => (
+                    <option value={holder.id} key={holder.id}>
+                      {holder.name} ({getBalance(goodBalanceMap, holder.id, postProductId)} good)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Product
+                <select value={postProductId} onChange={(event) => setPostProductId(event.target.value)} required>
+                  {activeProducts.map((product) => (
+                    <option value={product.id} key={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Quantity
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={postQuantity}
+                  onChange={(event) => setPostQuantity(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Reference
+                <input value={postReference} onChange={(event) => setPostReference(event.target.value)} placeholder="AusPost / slip" />
+              </label>
+              <label>
+                Tracking
+                <input value={postTracking} onChange={(event) => setPostTracking(event.target.value)} />
+              </label>
+              <button className="primary-button full-width" type="submit" disabled={submitting || !warehouses.length}>
+                <Truck size={18} />
+                Save customer posting
+              </button>
+            </form>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Record Electrician Changeover</h2>
+                <p>Good stock is installed; faulty stock is added to the electrician.</p>
+              </div>
+            </div>
+            <form className="warranty-form" onSubmit={onRecordChangeover}>
+              <label>
+                Electrician
+                <select value={changeTechnicianId} onChange={(event) => setChangeTechnicianId(event.target.value)} required>
+                  {technicians.map((holder) => (
+                    <option value={holder.id} key={holder.id}>
+                      {holder.name} ({getBalance(goodBalanceMap, holder.id, changeProductId)} good)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Product
+                <select value={changeProductId} onChange={(event) => setChangeProductId(event.target.value)} required>
+                  {activeProducts.map((product) => (
+                    <option value={product.id} key={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Faulty count
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={changeQuantity}
+                  onChange={(event) => setChangeQuantity(event.target.value)}
+                  required
+                />
+              </label>
+              <div className="availability-note">
+                Good stock available: {getBalance(goodBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
+                <br />
+                Faulty held now: {getBalance(faultyBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
+              </div>
+              <label className="full-width">
+                Notes
+                <textarea value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} rows={3} />
+              </label>
+              <button className="primary-button full-width" type="submit" disabled={submitting || !technicians.length}>
+                <PackageCheck size={18} />
+                Save changeover
+              </button>
+            </form>
+          </section>
+        </section>
+      ) : (
+        <section className="empty-state">
+          <ClipboardList size={36} />
+          <h2>Create or select a warranty job</h2>
+        </section>
+      )}
+    </section>
+  );
+}
+
 function LedgerView({
   data,
   filteredMovements,
@@ -1230,6 +2077,7 @@ function LedgerView({
                   <span className={`type-chip ${movementTone[movement.movement_type]}`}>
                     {movementLabels[movement.movement_type]}
                   </span>
+                  <span>{conditionLabels[getMovementCondition(movement)]}</span>
                 </td>
                 <td>{productName(movement.product_id)}</td>
                 <td>
@@ -1237,7 +2085,7 @@ function LedgerView({
                 </td>
                 <td>{movement.quantity.toLocaleString()}</td>
                 <td>
-                  {[movement.reference, movement.tracking].filter(Boolean).join(" / ")}
+                  {[movement.job_number, movement.customer_name, movement.reference, movement.tracking].filter(Boolean).join(" / ")}
                   {movement.notes ? <span>{movement.notes}</span> : null}
                 </td>
                 <td className="row-action">
