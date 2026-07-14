@@ -873,6 +873,15 @@ textarea:focus {
   font-size: 0.84rem;
 }
 
+.tracking-chip {
+  color: var(--green-dark);
+  font-weight: 720;
+}
+
+a.tracking-chip {
+  text-decoration: underline;
+}
+
 .electricians-stack {
   display: grid;
   gap: 18px;

@@ -559,11 +559,6 @@ export default function App() {
     }
   }, [changeProductId, changeTechnicianId, goodBalanceMap, technicians]);
 
-  useEffect(() => {
-    if (!selectedWarrantyJobId && sortedWarrantyJobs[0]) {
-      setSelectedWarrantyJobId(sortedWarrantyJobs[0].id);
-    }
-  }, [selectedWarrantyJobId, sortedWarrantyJobs]);
 
   useEffect(() => {
     if ((!selectedElectricianId || !technicians.some((holder) => holder.id === selectedElectricianId)) && technicians[0]) {
@@ -2647,10 +2642,24 @@ function WarrantyView({
       ) : (
         <section className="empty-state">
           <ClipboardList size={36} />
-          <h2>Create or select a warranty job</h2>
+          <h2>Click a job to post stock or record a changeover</h2>
+          <p className="muted">Create a job on the left, then select it from the list above.</p>
         </section>
       )}
     </section>
+  );
+}
+
+function TrackingLink({ tracking }: { tracking: string | null | undefined }) {
+  if (!tracking) return null;
+  const value = tracking.trim();
+  const looksUrl = /^(https?:\/\/|www\.)/i.test(value) || /^[^\s]+\.[a-z]{2,}(\/|$)/i.test(value);
+  if (!looksUrl) return <span className="tracking-chip">Tracking: {value}</span>;
+  const href = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return (
+    <a className="tracking-chip" href={href} target="_blank" rel="noopener noreferrer">
+      Tracking
+    </a>
   );
 }
 
@@ -2716,7 +2725,7 @@ function LedgerView({
 
       <div className="ledger-list">
         {visible.map((movement) => {
-          const reference = [movement.job_number, movement.customer_name, movement.reference, movement.tracking]
+          const reference = [movement.job_number, movement.customer_name, movement.reference]
             .filter(Boolean)
             .join(" / ");
           return (
@@ -2732,6 +2741,8 @@ function LedgerView({
                 <span className="ledger-route">
                   {routeText(movement)}
                   {reference ? ` · ${reference}` : ""}
+                  {movement.tracking ? " · " : ""}
+                  <TrackingLink tracking={movement.tracking} />
                 </span>
               </span>
               <button
@@ -3214,6 +3225,8 @@ function ElectriciansView({
                               {[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
                                 .filter(Boolean)
                                 .join(" / ")}
+                              {movement.tracking ? " " : ""}
+                              <TrackingLink tracking={movement.tracking} />
                             </td>
                           </tr>
                         );
