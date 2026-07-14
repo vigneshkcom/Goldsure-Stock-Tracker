@@ -745,6 +745,58 @@ textarea:focus {
   margin-top: 16px;
 }
 
+.ledger-list {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+}
+
+.ledger-item {
+  display: grid;
+  grid-template-columns: 84px minmax(96px, auto) minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8faf9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.ledger-date {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.ledger-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ledger-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.ledger-route {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 620;
+}
+
+.ledger-empty,
+.ledger-more {
+  margin: 4px 2px 0;
+  font-size: 0.84rem;
+}
+
 .electricians-stack {
   display: grid;
   gap: 18px;

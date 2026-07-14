@@ -2347,13 +2347,28 @@ function LedgerView({
 }) {
   const holderName = (id: string | null) => data.holders.find((holder) => holder.id === id)?.name ?? "";
   const productName = (id: string) => data.products.find((product) => product.id === id)?.name ?? "Unknown product";
+  const routeText = (movement: Movement) => {
+    const from = holderName(movement.from_holder_id);
+    const to = holderName(movement.to_holder_id);
+    if (from && to) return `${from} → ${to}`;
+    return to || from || "Stock count";
+  };
+
+  const isFiltered = searchTerm.trim() !== "" || movementFilter !== "all";
+  const LEDGER_LIMIT = 12;
+  const visible = isFiltered ? filteredMovements : filteredMovements.slice(0, LEDGER_LIMIT);
+  const hiddenCount = filteredMovements.length - visible.length;
 
   return (
     <section className="panel ledger-panel">
       <div className="panel-header ledger-header">
         <div>
           <h2>Movement Ledger</h2>
-          <p>{filteredMovements.length.toLocaleString()} visible movements</p>
+          <p>
+            {isFiltered
+              ? `${filteredMovements.length.toLocaleString()} matching movements`
+              : `Showing ${visible.length} of ${filteredMovements.length.toLocaleString()} movements`}
+          </p>
         </div>
         <div className="ledger-tools">
           <label className="search-box">
@@ -2371,71 +2386,49 @@ function LedgerView({
         </div>
       </div>
 
-      <div className="responsive-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Product</th>
-              <th>Route</th>
-              <th>Qty</th>
-              <th>Reference</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredMovements.map((movement) => (
-              <tr key={movement.id}>
-                <td>{formatDate(movement.movement_date)}</td>
-                <td>
-                  <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                    {movementLabels[movement.movement_type]}
-                  </span>
-                  <span>{conditionLabels[getMovementCondition(movement)]}</span>
-                </td>
-                <td>{productName(movement.product_id)}</td>
-                <td>
-                  <RouteLabel from={holderName(movement.from_holder_id)} to={holderName(movement.to_holder_id)} />
-                </td>
-                <td>{movement.quantity.toLocaleString()}</td>
-                <td>
-                  {[movement.job_number, movement.customer_name, movement.reference, movement.tracking].filter(Boolean).join(" / ")}
-                  {movement.notes ? <span>{movement.notes}</span> : null}
-                </td>
-                <td className="row-action">
-                  <button
-                    className="icon-button danger"
-                    type="button"
-                    title="Delete movement"
-                    aria-label="Delete movement"
-                    disabled={submitting}
-                    onClick={() => deleteMovement(movement.id)}
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="ledger-list">
+        {visible.map((movement) => {
+          const reference = [movement.job_number, movement.customer_name, movement.reference, movement.tracking]
+            .filter(Boolean)
+            .join(" / ");
+          return (
+            <div className="ledger-item" key={movement.id}>
+              <span className="ledger-date">{formatDate(movement.movement_date)}</span>
+              <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                {movementLabels[movement.movement_type]}
+              </span>
+              <span className="ledger-main">
+                <strong>
+                  {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
+                </strong>
+                <span className="ledger-route">
+                  {routeText(movement)}
+                  {reference ? ` · ${reference}` : ""}
+                </span>
+              </span>
+              <button
+                className="icon-button danger"
+                type="button"
+                title="Delete movement"
+                aria-label="Delete movement"
+                disabled={submitting}
+                onClick={() => deleteMovement(movement.id)}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          );
+        })}
+
+        {visible.length === 0 ? <p className="ledger-empty muted">No movements to show.</p> : null}
+        {hiddenCount > 0 ? (
+          <p className="ledger-more muted">
+            {hiddenCount.toLocaleString()} older movements hidden — search or filter to find them.
+          </p>
+        ) : null}
       </div>
     </section>
   );
-}
-
-function RouteLabel({ from, to }: { from: string; to: string }) {
-  if (from && to) {
-    return (
-      <span className="route-label">
-        {from}
-        <span>to</span>
-        {to}
-      </span>
-    );
-  }
-
-  return <span>{to || from || "Stock count"}</span>;
 }
 
 function ElectriciansView({
