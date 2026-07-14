@@ -57,28 +57,20 @@ export function messageToHtml(message: string): string {
   return `<div style="margin-bottom:18px;">${paragraphs}</div>`;
 }
 
-// The Goldsure email signature block.
-export function buildSignatureHtml(logoUrl?: string): string {
+// A plain-text email signature (no logo — data-URI images are blocked by Gmail).
+export function buildSignatureHtml(): string {
   const { signature } = pickupConfig;
-  const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" height="70" style="height:70px;width:auto;display:block;" />`
-    : `<span style="font-size:20px;font-weight:bold;color:#111111;">Goldsure</span>`;
   return `
-  <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;margin-top:26px;font-family:Arial,Helvetica,sans-serif;color:#111111;">
-    <tr>
-      <td style="vertical-align:middle;padding:0 18px 0 0;">${logo}</td>
-      <td style="vertical-align:middle;padding:0 0 0 18px;border-left:2px solid #111111;font-size:13px;line-height:1.5;color:#111111;">
-        <span style="font-size:17px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
-        <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
-        <span style="font-size:5px;line-height:5px;">&nbsp;</span><br />
-        <strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:#111111;text-decoration:none;">${escapeHtml(signature.email)}</a><br />
-        <strong>p:</strong> ${escapeHtml(signature.phone)}<br />
-        <strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:#111111;text-decoration:none;">${escapeHtml(signature.web)}</a>
-      </td>
-    </tr>
-  </table>
-  <p style="font-size:10px;color:#8a8a8a;line-height:1.45;max-width:840px;margin:16px 0 0;">CONFIDENTIAL EMAIL MESSAGE | This is a confidential message to be read only by the recipient named above. Information on this email, including any attachments, may contain information which is confidential. If you are not the named recipient you must not read, copy, use the email or any information on it, in any way. Any unauthorised use may be the subject of legal proceedings against you. Therefore, please contact the sender immediately by telephone, fax or email at the numbers above if you have received this message in error. It is requested that thereafter this email and any attachments thereto be destroyed.</p>
-  <p style="font-size:11px;color:#2e7d32;margin:8px 0 0;">&#127793; Please consider the environment before printing this email</p>`;
+  <div style="margin-top:24px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#111111;">
+    <span style="font-size:15px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
+    <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
+    <br />
+    <strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:#111111;">${escapeHtml(signature.email)}</a><br />
+    <strong>p:</strong> ${escapeHtml(signature.phone)}<br />
+    <strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:#111111;">${escapeHtml(signature.web)}</a>
+  </div>
+  <p style="font-size:10px;color:#8a8a8a;line-height:1.45;max-width:840px;margin:18px 0 0;">CONFIDENTIAL EMAIL MESSAGE | This is a confidential message to be read only by the recipient named above. Information on this email, including any attachments, may contain information which is confidential. If you are not the named recipient you must not read, copy, use the email or any information on it, in any way. Any unauthorised use may be the subject of legal proceedings against you. Therefore, please contact the sender immediately by telephone, fax or email at the numbers above if you have received this message in error. It is requested that thereafter this email and any attachments thereto be destroyed.</p>
+  <p style="font-size:11px;color:#2e7d32;margin:8px 0 0;">Please consider the environment before printing this email</p>`;
 }
 
 export function buildPickupSlipInner(input: PickupSlipInput): string {
@@ -168,6 +160,52 @@ export type StockReportInput = {
   lost: { date: string; product: string; qty: number; charged: string }[];
   logoUrl?: string;
 };
+
+export type ReportEmailBodyInput = {
+  asOfDate: string;
+  weekEndingLabel: string;
+  remaining: { product: string; good: number; faulty: number }[];
+  installedThisWeek: { product: string; qty: number }[];
+};
+
+// The short email body: stock on hand and this week's installs. Full detail is
+// in the attached PDF.
+export function buildReportEmailBodyInner(input: ReportEmailBodyInput): string {
+  const onHandRows = input.remaining
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.good.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
+  const installedRows = input.installedThisWeek.length
+    ? input.installedThisWeek
+        .map(
+          (row) =>
+            `<tr><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
+        )
+        .join("")
+    : "";
+
+  return `
+    <h2 style="font-size:1.05rem;margin:0 0 6px;">Stock on hand as of ${escapeHtml(input.asOfDate)}</h2>
+    <table style="border-collapse:collapse;font-size:13px;min-width:320px;">
+      <tr><th style="${head}">Product</th><th style="${head}">On hand</th></tr>
+      ${onHandRows}
+    </table>
+
+    <h2 style="font-size:1.05rem;margin:20px 0 6px;">Installed &mdash; ${escapeHtml(input.weekEndingLabel)}</h2>
+    ${
+      input.installedThisWeek.length
+        ? `<table style="border-collapse:collapse;font-size:13px;min-width:320px;">
+      <tr><th style="${head}">Product</th><th style="${head}">Installed</th></tr>
+      ${installedRows}
+    </table>`
+        : `<p style="font-size:13px;color:#555;margin:0;">Nothing installed this week.</p>`
+    }
+
+    <p style="font-size:13px;color:#555;margin:20px 0 0;">The full stock report is attached as a PDF.</p>`;
+}
 
 // Monthly stock statement emailed to an electrician.
 export function buildStockReportInner(input: StockReportInput): string {

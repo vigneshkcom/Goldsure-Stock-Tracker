@@ -31,13 +31,15 @@ import { pickupConfig, cartonsForSku } from "./pickupConfig";
 import {
   buildPickupSlipHtml,
   buildPickupSlipInner,
+  buildReportEmailBodyInner,
   buildSignatureHtml,
-  buildStockReportInner,
   formatSlipDate,
   messageToHtml,
   wrapDocument,
   type PickupLine,
+  type StockReportInput,
 } from "./pickupSlip";
+import { buildReportPdfBase64 } from "./reportPdf";
 import type {
   BalanceRow,
   Holder,
@@ -427,6 +429,7 @@ export default function App() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeKind, setComposeKind] = useState<"pickup" | "report">("pickup");
   const [composeBodyInner, setComposeBodyInner] = useState("");
+  const [composeAttachment, setComposeAttachment] = useState<{ filename: string; content: string } | null>(null);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeCc, setComposeCc] = useState("");
@@ -1128,6 +1131,7 @@ export default function App() {
     }
     setComposeKind("pickup");
     setComposeBodyInner(slip.slipInner);
+    setComposeAttachment(null);
     setComposeTo(slip.to.join(", "));
     setComposeSubject(slip.subject);
     setComposeCc(slip.cc.join(", "));
@@ -1187,18 +1191,32 @@ export default function App() {
         charged: m.charged ? `Charged${m.charge_amount ? ` $${m.charge_amount.toLocaleString()}` : ""}` : "Not charged",
       }));
 
+    // This week's installs (week ending the Sunday of the current week).
+    const thisWeek = weekEndingSunday(today());
+    const thisWeekGroups = new Map<string, number>();
+    data.movements
+      .filter(
+        (m) =>
+          m.from_holder_id === electrician.id &&
+          m.movement_type === "install" &&
+          weekEndingSunday(m.movement_date) === thisWeek,
+      )
+      .forEach((m) => thisWeekGroups.set(m.product_id, (thisWeekGroups.get(m.product_id) ?? 0) + m.quantity));
+    const installedThisWeek = activeProducts
+      .filter((product) => thisWeekGroups.has(product.id))
+      .map((product) => ({ product: product.name, qty: thisWeekGroups.get(product.id) ?? 0 }));
+
     const asOfDate = formatDate(today());
-    const reportInner = buildStockReportInner({
+    const reportData: StockReportInput = {
       electricianName: electrician.name,
       asOfDate,
       remaining,
       received,
       installsByWeek,
       lost,
-      logoUrl: undefined,
-    });
+    };
 
-    return { electrician, reportInner, asOfDate };
+    return { electrician, reportData, asOfDate, weekEndingLabel: formatWeekEnding(thisWeek), remaining, installedThisWeek };
   }
 
   function openComposeStockReport() {
@@ -1210,13 +1228,25 @@ export default function App() {
       return;
     }
     const firstName = report.electrician.name.split(" ")[0];
+    const bodyInner = buildReportEmailBodyInner({
+      asOfDate: report.asOfDate,
+      weekEndingLabel: report.weekEndingLabel,
+      remaining: report.remaining,
+      installedThisWeek: report.installedThisWeek,
+    });
+    const pdf = buildReportPdfBase64(report.reportData);
+
     setComposeKind("report");
-    setComposeBodyInner(report.reportInner);
+    setComposeBodyInner(bodyInner);
+    setComposeAttachment({
+      filename: `Stock report - ${report.electrician.name} - ${report.asOfDate}.pdf`,
+      content: pdf,
+    });
     setComposeTo(report.electrician.email ?? "");
     setComposeCc("");
     setComposeSubject(`Goldsure stock report - ${report.electrician.name} - as of ${report.asOfDate}`);
     setComposeMessage(
-      `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Please check the stock on hand below and let me know if anything looks off.\n\nThanks`,
+      `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Your stock on hand and this week's installs are below, with the full report attached as a PDF.\n\nThanks`,
     );
     setComposeOpen(true);
   }
@@ -1253,7 +1283,7 @@ export default function App() {
       return;
     }
 
-    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml(logoDataUri)}`);
+    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml()}`);
 
     setSendingSlip(true);
     setError(null);
@@ -1262,7 +1292,13 @@ export default function App() {
       const response = await fetch("/api/send-pickup-slip", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ to, cc, subject: composeSubject, html }),
+        body: JSON.stringify({
+          to,
+          cc,
+          subject: composeSubject,
+          html,
+          attachments: composeAttachment ? [composeAttachment] : undefined,
+        }),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {

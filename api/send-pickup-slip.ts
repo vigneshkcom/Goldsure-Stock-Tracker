@@ -29,7 +29,13 @@ export default async function handler(request: Request): Promise<Response> {
 
   const from = process.env.PICKUP_FROM_EMAIL || "Goldsure Stock Tracker <onboarding@resend.dev>";
 
-  let payload: { to?: string[]; cc?: string[]; subject?: string; html?: string };
+  let payload: {
+    to?: string[];
+    cc?: string[];
+    subject?: string;
+    html?: string;
+    attachments?: { filename: string; content: string }[];
+  };
   try {
     payload = await request.json();
   } catch {
@@ -41,6 +47,8 @@ export default async function handler(request: Request): Promise<Response> {
   if (!to.length || !payload.subject || !payload.html) {
     return json({ error: "Missing recipient, subject, or content" }, 400);
   }
+
+  const attachments = (payload.attachments ?? []).filter((item) => item && item.filename && item.content);
 
   const resendResponse = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -54,6 +62,7 @@ export default async function handler(request: Request): Promise<Response> {
       cc: cc.length ? cc : undefined,
       subject: payload.subject,
       html: payload.html,
+      attachments: attachments.length ? attachments : undefined,
     }),
   });
 
