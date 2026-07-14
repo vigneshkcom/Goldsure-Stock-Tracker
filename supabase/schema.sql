@@ -98,6 +98,11 @@ add column if not exists job_number text;
 alter table public.stock_movements
 add column if not exists customer_name text;
 
+-- Stock-loss tracking: mark a movement as a loss and whether the holder was charged.
+alter table public.stock_movements add column if not exists is_loss boolean not null default false;
+alter table public.stock_movements add column if not exists charged boolean;
+alter table public.stock_movements add column if not exists charge_amount numeric;
+
 alter table public.stock_movements
 drop constraint if exists stock_movements_movement_type_check;
 

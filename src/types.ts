@@ -51,6 +51,9 @@ export type Movement = {
   reference: string | null;
   tracking: string | null;
   notes: string | null;
+  is_loss?: boolean;
+  charged?: boolean | null;
+  charge_amount?: number | null;
   created_at?: string;
 };
 

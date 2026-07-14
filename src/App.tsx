@@ -140,6 +140,9 @@ function normalizeData(value: Partial<StockData> | null | undefined): StockData 
       warranty_job_id: movement.warranty_job_id ?? null,
       job_number: movement.job_number ?? null,
       customer_name: movement.customer_name ?? null,
+      is_loss: movement.is_loss ?? false,
+      charged: movement.charged ?? null,
+      charge_amount: movement.charge_amount ?? null,
     })),
     warrantyJobs: value?.warrantyJobs ?? [],
   };
@@ -414,6 +417,11 @@ export default function App() {
   const [pickupQty, setPickupQty] = useState<Record<string, string>>({});
   const [pickupNotes, setPickupNotes] = useState("");
   const [sendingSlip, setSendingSlip] = useState(false);
+  const [lossDate, setLossDate] = useState(today());
+  const [lossQty, setLossQty] = useState<Record<string, string>>({});
+  const [lossCharged, setLossCharged] = useState(false);
+  const [lossAmount, setLossAmount] = useState("");
+  const [lossNotes, setLossNotes] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -924,6 +932,95 @@ export default function App() {
     if (ok) {
       setInstallQty({});
       setInstallReference("");
+    }
+  }
+
+  async function handleRecordLoss(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    if (!electrician) {
+      setError("Choose an electrician.");
+      return;
+    }
+
+    const lines = collectLines(lossQty);
+    if (!lines.length) {
+      setError("Enter a lost quantity for at least one product.");
+      return;
+    }
+    for (const line of lines) {
+      const available = getBalance(goodBalanceMap, electrician.id, line.productId);
+      if (available < line.quantity) {
+        const productName = activeProducts.find((product) => product.id === line.productId)?.name ?? "product";
+        setError(`${electrician.name} only has ${available} of ${productName} on record.`);
+        return;
+      }
+    }
+
+    const amount = lossCharged && lossAmount.trim() ? Number(lossAmount) : null;
+    const createdAt = new Date().toISOString();
+    const ok = await saveBatch(
+      lines,
+      (line) => ({
+        id: crypto.randomUUID(),
+        movement_date: lossDate,
+        movement_type: "adjustment",
+        product_condition: "good",
+        product_id: line.productId,
+        quantity: line.quantity,
+        from_holder_id: electrician.id,
+        to_holder_id: null,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
+        reference: "Stock loss",
+        tracking: null,
+        notes: lossNotes.trim() || null,
+        is_loss: true,
+        charged: lossCharged,
+        charge_amount: amount && Number.isFinite(amount) ? amount : null,
+        created_at: createdAt,
+      }),
+      `Stock loss recorded for ${electrician.name}.`,
+    );
+    if (ok) {
+      setLossQty({});
+      setLossAmount("");
+      setLossNotes("");
+      setLossCharged(false);
+    }
+  }
+
+  async function updateMovement(movementId: string, updates: Partial<Movement>) {
+    if (usingRemote && supabase) {
+      const { data: updated, error: updateError } = await supabase
+        .from("stock_movements")
+        .update(updates)
+        .eq("id", movementId)
+        .select("*")
+        .single();
+      if (updateError) throw updateError;
+      setData((current) =>
+        normalizeData({
+          ...current,
+          movements: current.movements.map((movement) => (movement.id === movementId ? (updated as Movement) : movement)),
+        }),
+      );
+      return;
+    }
+    updateLocal((current) => ({
+      ...current,
+      movements: current.movements.map((movement) => (movement.id === movementId ? { ...movement, ...updates } : movement)),
+    }));
+  }
+
+  async function toggleLossCharged(movement: Movement) {
+    setError(null);
+    setMessage(null);
+    try {
+      await updateMovement(movement.id, { charged: !movement.charged });
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "Could not update the charged status.");
     }
   }
 
@@ -1686,8 +1783,21 @@ export default function App() {
               setPickupReleaseDate={setPickupReleaseDate}
               setPickupQty={setPickupQty}
               setPickupNotes={setPickupNotes}
+              lossDate={lossDate}
+              lossQty={lossQty}
+              lossCharged={lossCharged}
+              lossAmount={lossAmount}
+              lossNotes={lossNotes}
+              setLossDate={setLossDate}
+              setLossQty={setLossQty}
+              setLossCharged={setLossCharged}
+              setLossAmount={setLossAmount}
+              setLossNotes={setLossNotes}
               onGiveStock={handleGiveStock}
               onRecordInstall={handleRecordInstall}
+              onRecordLoss={handleRecordLoss}
+              onToggleLossCharged={toggleLossCharged}
+              onDeleteMovement={deleteMovement}
               onPrintPickupSlip={handlePrintPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
             />
@@ -2801,8 +2911,21 @@ function ElectriciansView({
   setPickupReleaseDate,
   setPickupQty,
   setPickupNotes,
+  lossDate,
+  lossQty,
+  lossCharged,
+  lossAmount,
+  lossNotes,
+  setLossDate,
+  setLossQty,
+  setLossCharged,
+  setLossAmount,
+  setLossNotes,
   onGiveStock,
   onRecordInstall,
+  onRecordLoss,
+  onToggleLossCharged,
+  onDeleteMovement,
   onPrintPickupSlip,
   onSendPickupSlip,
 }: {
@@ -2836,8 +2959,21 @@ function ElectriciansView({
   setPickupReleaseDate: (value: string) => void;
   setPickupQty: (value: Record<string, string>) => void;
   setPickupNotes: (value: string) => void;
+  lossDate: string;
+  lossQty: Record<string, string>;
+  lossCharged: boolean;
+  lossAmount: string;
+  lossNotes: string;
+  setLossDate: (value: string) => void;
+  setLossQty: (value: Record<string, string>) => void;
+  setLossCharged: (value: boolean) => void;
+  setLossAmount: (value: string) => void;
+  setLossNotes: (value: string) => void;
   onGiveStock: (event: FormEvent<HTMLFormElement>) => void;
   onRecordInstall: (event: FormEvent<HTMLFormElement>) => void;
+  onRecordLoss: (event: FormEvent<HTMLFormElement>) => void;
+  onToggleLossCharged: (movement: Movement) => void;
+  onDeleteMovement: (movementId: string) => void;
   onPrintPickupSlip: () => void;
   onSendPickupSlip: () => void;
 }) {
@@ -2910,6 +3046,12 @@ function ElectriciansView({
       });
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   })();
+
+  const losses = history.filter((movement) => movement.is_loss && movement.from_holder_id === electrician?.id);
+  const lostTotal = losses.reduce((total, movement) => total + movement.quantity, 0);
+  const chargedTotal = losses
+    .filter((movement) => movement.charged)
+    .reduce((total, movement) => total + (movement.charge_amount ?? 0), 0);
 
   return (
     <section className="electricians-stack">
@@ -3185,6 +3327,131 @@ function ElectriciansView({
                     </button>
                   </div>
                 </div>
+              </section>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Record Stock Loss</h2>
+                    <p>
+                      Removes lost stock from {electrician.name} and keeps a record of whether they were charged.
+                      {losses.length ? ` ${lostTotal.toLocaleString()} lost so far, $${chargedTotal.toLocaleString()} charged.` : ""}
+                    </p>
+                  </div>
+                </div>
+                <form className="stack-form" onSubmit={onRecordLoss}>
+                  <label>
+                    Date
+                    <input type="date" value={lossDate} onChange={(event) => setLossDate(event.target.value)} required />
+                  </label>
+                  <div className="qty-list">
+                    {activeProducts.map((product) => (
+                      <div className="qty-row" key={product.id}>
+                        <div className="qty-name">
+                          <strong>{product.name}</strong>
+                          <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={lossQty[product.id] ?? ""}
+                          onChange={(event) => setLossQty({ ...lossQty, [product.id]: event.target.value })}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="form-row">
+                    <div className="segmented-control" role="group" aria-label="Charged status">
+                      <button className={lossCharged ? "" : "active"} type="button" onClick={() => setLossCharged(false)}>
+                        Not charged
+                      </button>
+                      <button className={lossCharged ? "active" : ""} type="button" onClick={() => setLossCharged(true)}>
+                        Charged
+                      </button>
+                    </div>
+                    <label>
+                      Amount charged ($)
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={lossAmount}
+                        onChange={(event) => setLossAmount(event.target.value)}
+                        disabled={!lossCharged}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Notes
+                    <textarea
+                      value={lossNotes}
+                      onChange={(event) => setLossNotes(event.target.value)}
+                      rows={2}
+                      placeholder="What was lost and how"
+                    />
+                  </label>
+                  <button className="primary-button" type="submit" disabled={submitting}>
+                    <AlertTriangle size={18} />
+                    Record loss
+                  </button>
+                </form>
+
+                {losses.length ? (
+                  <>
+                    <p className="list-label">Recorded losses</p>
+                    <div className="responsive-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Charged</th>
+                            <th>Notes</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {losses.map((movement) => (
+                            <tr key={movement.id}>
+                              <td>{formatDate(movement.movement_date)}</td>
+                              <td>{productName(movement.product_id)}</td>
+                              <td>{movement.quantity.toLocaleString()}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className={`status-chip ${movement.charged ? "ok" : "attention"} chip-button`}
+                                  onClick={() => onToggleLossCharged(movement)}
+                                  title="Click to change"
+                                >
+                                  {movement.charged
+                                    ? `Charged${movement.charge_amount ? ` $${movement.charge_amount.toLocaleString()}` : ""}`
+                                    : "Not charged"}
+                                </button>
+                              </td>
+                              <td>{movement.notes}</td>
+                              <td className="row-action">
+                                <button
+                                  className="icon-button danger"
+                                  type="button"
+                                  title="Delete loss"
+                                  aria-label="Delete loss"
+                                  disabled={submitting}
+                                  onClick={() => onDeleteMovement(movement.id)}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : null}
               </section>
 
               <section className="panel">

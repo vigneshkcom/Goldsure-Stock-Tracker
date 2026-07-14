@@ -878,6 +878,12 @@ textarea:focus {
   font-weight: 720;
 }
 
+.chip-button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
 a.tracking-chip {
   text-decoration: underline;
 }

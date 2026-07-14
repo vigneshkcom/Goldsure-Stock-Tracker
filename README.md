@@ -56,6 +56,14 @@ Removing an electrician with no stock history deletes them outright; if they hav
 past movements, they are hidden from the lists while their history is kept for the
 records.
 
+### Stock loss
+
+On the **Electricians** tab, **Record Stock Loss** removes lost stock from an
+electrician and keeps a record of the products, quantity, date, and whether the
+electrician was charged (with an optional amount). Click the charged badge in the
+Recorded losses list to toggle charged / not charged later. Losses also appear in
+the ledger as an adjustment labelled "Stock loss".
+
 ## Warranty Workflow
 
 1. Create a warranty job with the job number and customer details.
