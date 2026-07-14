@@ -1807,6 +1807,22 @@ function MovementForm({
     movementType === "issue" ? technicians : movementType === "return" || movementType === "receive" ? warehouses : activeHolders;
   const available = showFrom ? getBalance(balanceMap, fromHolderId, productId) : null;
 
+  // When the movement type changes, the From/To option lists change too. Reset a
+  // selection that is no longer valid so the stored holder always matches the
+  // dropdown (otherwise the summary — and the saved movement — point at the
+  // wrong holder).
+  useEffect(() => {
+    if (showTo && toOptions.length > 0 && !toOptions.some((holder) => holder.id === toHolderId)) {
+      setToHolderId(toOptions[0].id);
+    }
+  }, [showTo, toOptions, toHolderId, setToHolderId]);
+
+  useEffect(() => {
+    if (showFrom && fromOptions.length > 0 && !fromOptions.some((holder) => holder.id === fromHolderId)) {
+      setFromHolderId(fromOptions[0].id);
+    }
+  }, [showFrom, fromOptions, fromHolderId, setFromHolderId]);
+
   const holderName = (id: string) => activeHolders.find((holder) => holder.id === id)?.name ?? "";
   const productLabel = activeProducts.find((product) => product.id === productId)?.name ?? "stock";
   const parsedQuantity = Number(quantity);
