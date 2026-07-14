@@ -61,18 +61,19 @@ export function messageToHtml(message: string): string {
 export function buildSignatureHtml(logoUrl?: string): string {
   const { signature } = pickupConfig;
   const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" height="58" style="height:58px;width:auto;display:block;" />`
-    : `<div style="font-size:22px;font-weight:bold;color:#111;">Goldsure</div>`;
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Goldsure" height="70" style="height:70px;width:auto;display:block;" />`
+    : `<span style="font-size:20px;font-weight:bold;color:#111111;">Goldsure</span>`;
   return `
-  <table style="border-collapse:collapse;margin-top:30px;font-family:Arial,Helvetica,sans-serif;">
+  <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:collapse;margin-top:26px;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <tr>
-      <td style="vertical-align:middle;padding-right:16px;">${logo}</td>
-      <td style="vertical-align:middle;padding-left:16px;border-left:2px solid #111;font-size:13px;color:#111;line-height:1.5;">
-        <div style="font-size:18px;font-weight:bold;">${escapeHtml(signature.name)}</div>
-        <div style="margin:2px 0 8px;color:#333;">${escapeHtml(signature.title)}</div>
-        <div><strong>e:</strong> ${escapeHtml(signature.email)}</div>
-        <div><strong>p:</strong> ${escapeHtml(signature.phone)}</div>
-        <div><strong>w:</strong> ${escapeHtml(signature.web)}</div>
+      <td style="vertical-align:middle;padding:0 18px 0 0;">${logo}</td>
+      <td style="vertical-align:middle;padding:0 0 0 18px;border-left:2px solid #111111;font-size:13px;line-height:1.5;color:#111111;">
+        <span style="font-size:17px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
+        <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
+        <span style="font-size:5px;line-height:5px;">&nbsp;</span><br />
+        <strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:#111111;text-decoration:none;">${escapeHtml(signature.email)}</a><br />
+        <strong>p:</strong> ${escapeHtml(signature.phone)}<br />
+        <strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:#111111;text-decoration:none;">${escapeHtml(signature.web)}</a>
       </td>
     </tr>
   </table>
@@ -160,8 +161,7 @@ export function buildPickupSlipHtml(input: PickupSlipInput): string {
 
 export type StockReportInput = {
   electricianName: string;
-  generatedDate: string;
-  monthLabel: string;
+  asOfDate: string;
   remaining: { product: string; good: number; faulty: number }[];
   received: { date: string; type: string; product: string; from: string; qty: number }[];
   installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
@@ -214,7 +214,7 @@ export function buildStockReportInner(input: StockReportInput): string {
   return `
     ${logo}
     <h1 style="font-size:1.4rem;margin:0 0 4px;">Stock Report &mdash; ${escapeHtml(input.electricianName)}</h1>
-    <p style="margin:0 0 18px;color:#444;">${escapeHtml(input.monthLabel)} &middot; generated ${escapeHtml(input.generatedDate)}</p>
+    <p style="margin:0 0 18px;color:#444;">As of ${escapeHtml(input.asOfDate)}</p>
 
     <h2 style="font-size:1.05rem;margin:18px 0 6px;">Stock On Hand Now</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">

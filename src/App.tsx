@@ -1187,11 +1187,10 @@ export default function App() {
         charged: m.charged ? `Charged${m.charge_amount ? ` $${m.charge_amount.toLocaleString()}` : ""}` : "Not charged",
       }));
 
-    const monthLabel = new Date(`${today()}T00:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const asOfDate = formatDate(today());
     const reportInner = buildStockReportInner({
       electricianName: electrician.name,
-      generatedDate: formatDate(today()),
-      monthLabel,
+      asOfDate,
       remaining,
       received,
       installsByWeek,
@@ -1199,7 +1198,7 @@ export default function App() {
       logoUrl: undefined,
     });
 
-    return { electrician, reportInner, monthLabel };
+    return { electrician, reportInner, asOfDate };
   }
 
   function openComposeStockReport() {
@@ -1215,9 +1214,9 @@ export default function App() {
     setComposeBodyInner(report.reportInner);
     setComposeTo(report.electrician.email ?? "");
     setComposeCc("");
-    setComposeSubject(`Goldsure stock report - ${report.electrician.name} - ${report.monthLabel}`);
+    setComposeSubject(`Goldsure stock report - ${report.electrician.name} - as of ${report.asOfDate}`);
     setComposeMessage(
-      `Hi ${firstName},\n\nHere is your current Goldsure stock summary for ${report.monthLabel}. Please check the stock on hand below and let me know if anything looks off.\n\nThanks`,
+      `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Please check the stock on hand below and let me know if anything looks off.\n\nThanks`,
     );
     setComposeOpen(true);
   }
