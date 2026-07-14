@@ -196,6 +196,19 @@ function sortProducts(products: Product[]) {
   return [...products].sort((a, b) => productRank(a) - productRank(b) || a.name.localeCompare(b.name));
 }
 
+// Warehouses list with the main holding first, then the rest.
+const WAREHOUSE_ORDER = ["specific freight", "melbourne"];
+
+function warehouseRank(holder: Holder) {
+  const name = holder.name.toLowerCase();
+  const index = WAREHOUSE_ORDER.findIndex((token) => name.includes(token));
+  return index === -1 ? WAREHOUSE_ORDER.length : index;
+}
+
+function sortWarehouses(holders: Holder[]) {
+  return [...holders].sort((a, b) => warehouseRank(a) - warehouseRank(b) || a.name.localeCompare(b.name));
+}
+
 // The Sunday that ends the week containing the given date.
 function weekEndingSunday(value: string) {
   const date = new Date(`${value}T00:00:00`);
@@ -336,7 +349,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
 
   const [movementDate, setMovementDate] = useState(today());
-  const [movementType, setMovementType] = useState<MovementType>("issue");
+  const [movementType, setMovementType] = useState<MovementType>("receive");
   const [productId, setProductId] = useState("");
   const [fromHolderId, setFromHolderId] = useState("");
   const [toHolderId, setToHolderId] = useState("");
@@ -398,7 +411,7 @@ export default function App() {
   const activeProducts = useMemo(() => sortProducts(data.products.filter((product) => product.active)), [data.products]);
   const activeHolders = useMemo(() => sortHolders(data.holders.filter((holder) => holder.active)), [data.holders]);
   const warehouses = useMemo(
-    () => activeHolders.filter((holder) => holder.holder_type === "warehouse"),
+    () => sortWarehouses(activeHolders.filter((holder) => holder.holder_type === "warehouse")),
     [activeHolders],
   );
   const technicians = useMemo(
@@ -1345,10 +1358,6 @@ export default function App() {
           <Boxes size={18} />
           Dashboard
         </button>
-        <button className={activeTab === "movements" ? "active" : ""} type="button" onClick={() => setActiveTab("movements")}>
-          <RefreshCw size={18} />
-          Movements
-        </button>
         <button className={activeTab === "electricians" ? "active" : ""} type="button" onClick={() => setActiveTab("electricians")}>
           <HardHat size={18} />
           Electricians
@@ -1356,6 +1365,10 @@ export default function App() {
         <button className={activeTab === "warranty" ? "active" : ""} type="button" onClick={() => setActiveTab("warranty")}>
           <ClipboardList size={18} />
           Warranty
+        </button>
+        <button className={activeTab === "movements" ? "active" : ""} type="button" onClick={() => setActiveTab("movements")}>
+          <RefreshCw size={18} />
+          Movements
         </button>
         <button className={activeTab === "setup" ? "active" : ""} type="button" onClick={() => setActiveTab("setup")}>
           <Wrench size={18} />
