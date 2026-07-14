@@ -40,7 +40,9 @@ import type {
 
 const LOCAL_STORAGE_KEY = "stock-tracker-data-v1";
 
-const generalMovementTypes: MovementType[] = ["opening", "receive", "issue", "return", "install", "adjustment"];
+// Move Stock covers warehouse-level actions only. Issuing and installing stock
+// for electricians lives on the Electricians tab, so they are not offered here.
+const generalMovementTypes: MovementType[] = ["opening", "receive", "return", "adjustment"];
 
 const movementLabels: Record<MovementType, string> = {
   opening: "Opening",
@@ -2073,9 +2075,6 @@ function WarrantyView({
   const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
   const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
   const faultyTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "faulty_collect", "faulty"), 0);
-  const selectedPosted = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "customer_post") : "";
-  const selectedInstalled = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "install") : "";
-  const selectedFaulty = selectedJob ? describeMovementProducts(selectedJob, data.movements, data.products, "faulty_collect") : "";
 
   return (
     <section className="warranty-stack">
@@ -2156,9 +2155,10 @@ function WarrantyView({
               const posted = sumJobMovement(job, data.movements, "customer_post", "good");
               const installed = sumJobMovement(job, data.movements, "install", "good");
               const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
+              const isActive = selectedJobId === job.id;
               return (
                 <button
-                  className={selectedJobId === job.id ? "job-row active" : "job-row"}
+                  className={isActive ? "job-row active" : "job-row"}
                   type="button"
                   onClick={() => setSelectedJobId(job.id)}
                   key={job.id}
@@ -2173,6 +2173,30 @@ function WarrantyView({
                   <span className="job-counts">
                     Posted {posted} | Installed {installed} | Faulty {faulty}
                   </span>
+                  {isActive ? (
+                    <div className="job-expand">
+                      <div>
+                        <span>Address</span>
+                        <strong>{job.customer_address || "Not entered"}</strong>
+                      </div>
+                      <div>
+                        <span>Phone</span>
+                        <strong>{job.customer_phone || "Not entered"}</strong>
+                      </div>
+                      <div>
+                        <span>Posted to customer</span>
+                        <strong>{describeMovementProducts(job, data.movements, data.products, "customer_post") || "None"}</strong>
+                      </div>
+                      <div>
+                        <span>Installed by electrician</span>
+                        <strong>{describeMovementProducts(job, data.movements, data.products, "install") || "None"}</strong>
+                      </div>
+                      <div>
+                        <span>Faulty in electrician inventory</span>
+                        <strong>{describeMovementProducts(job, data.movements, data.products, "faulty_collect") || "None"}</strong>
+                      </div>
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
@@ -2185,42 +2209,11 @@ function WarrantyView({
           <section className="panel">
             <div className="panel-header">
               <div>
-                <h2>{selectedJob.job_number}</h2>
-                <p>{selectedJob.customer_name}</p>
-              </div>
-              <span className={`status-chip ${selectedJob.status === "completed" ? "ok" : "attention"}`}>
-                {statusLabels[selectedJob.status]}
-              </span>
-            </div>
-            <div className="job-detail">
-              <div>
-                <span>Address</span>
-                <strong>{selectedJob.customer_address || "Not entered"}</strong>
-              </div>
-              <div>
-                <span>Phone</span>
-                <strong>{selectedJob.customer_phone || "Not entered"}</strong>
-              </div>
-              <div>
-                <span>Posted to customer</span>
-                <strong>{selectedPosted || "None"}</strong>
-              </div>
-              <div>
-                <span>Installed by electrician</span>
-                <strong>{selectedInstalled || "None"}</strong>
-              </div>
-              <div>
-                <span>Faulty in electrician inventory</span>
-                <strong>{selectedFaulty || "None"}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-header">
-              <div>
                 <h2>Post Stock To Customer</h2>
-                <p>Moves good stock out of warehouse and links it to this job.</p>
+                <p>
+                  {selectedJob.job_number} — {selectedJob.customer_name}. Moves good stock out of warehouse and links it to
+                  this job.
+                </p>
               </div>
             </div>
             <form className="warranty-form" onSubmit={onPostStock}>
@@ -2278,7 +2271,10 @@ function WarrantyView({
             <div className="panel-header">
               <div>
                 <h2>Record Electrician Changeover</h2>
-                <p>Good stock is installed; faulty stock is added to the electrician.</p>
+                <p>
+                  {selectedJob.job_number} — {selectedJob.customer_name}. Good stock is installed; faulty stock is added to
+                  the electrician.
+                </p>
               </div>
             </div>
             <form className="warranty-form" onSubmit={onRecordChangeover}>

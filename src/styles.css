@@ -626,6 +626,34 @@ textarea:focus {
   font-size: 0.84rem;
 }
 
+.job-expand {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.job-expand div {
+  display: grid;
+  gap: 2px;
+}
+
+.job-expand span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.job-expand strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 720;
+  white-space: normal;
+}
+
 .job-detail {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
