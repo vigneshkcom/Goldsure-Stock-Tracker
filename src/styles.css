@@ -745,6 +745,92 @@ textarea:focus {
   margin-top: 16px;
 }
 
+.electricians-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.electricians-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.electricians-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.electricians-forms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.stack-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.qty-list {
+  display: grid;
+  gap: 8px;
+}
+
+.qty-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  background: #f8faf9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.qty-row input {
+  min-height: 40px;
+  text-align: right;
+}
+
+.qty-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.qty-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+.qty-name span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 640;
+}
+
+.qty-in {
+  color: var(--green-dark);
+  font-weight: 780;
+}
+
+.qty-out {
+  color: var(--red);
+  font-weight: 780;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -754,7 +840,9 @@ textarea:focus {
 @media (max-width: 1040px) {
   .workspace-grid,
   .setup-grid,
-  .warranty-grid {
+  .warranty-grid,
+  .electricians-grid,
+  .electricians-forms {
     grid-template-columns: 1fr;
   }
 
@@ -792,7 +880,8 @@ textarea:focus {
   .metric-grid,
   .movement-form,
   .warranty-form,
-  .setup-form {
+  .setup-form,
+  .form-row {
     grid-template-columns: 1fr;
   }
 

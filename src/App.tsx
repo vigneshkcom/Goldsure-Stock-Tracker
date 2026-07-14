@@ -8,6 +8,7 @@ import {
   Database,
   DownloadCloud,
   Factory,
+  HardHat,
   PackageCheck,
   PackagePlus,
   Plus,
@@ -20,7 +21,7 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import type {
@@ -99,6 +100,9 @@ const statusLabels: Record<WarrantyJobStatus, string> = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Placeholder electricians seeded with no real name, e.g. "Electrician - 10".
+const STALE_ELECTRICIAN = /^electrician\s*-\s*\d+$/i;
 
 const emptyData: StockData = {
   products: [],
@@ -277,7 +281,7 @@ function sortWarrantyJobs(jobs: WarrantyJob[]) {
   );
 }
 
-type Tab = "dashboard" | "movements" | "warranty" | "setup";
+type Tab = "dashboard" | "movements" | "electricians" | "warranty" | "setup";
 type AdjustmentDirection = "in" | "out";
 
 export default function App() {
@@ -324,6 +328,15 @@ export default function App() {
   const [changeTechnicianId, setChangeTechnicianId] = useState("");
   const [changeQuantity, setChangeQuantity] = useState("1");
   const [changeNotes, setChangeNotes] = useState("");
+
+  const [selectedElectricianId, setSelectedElectricianId] = useState("");
+  const [giveWarehouseId, setGiveWarehouseId] = useState("");
+  const [giveDate, setGiveDate] = useState(today());
+  const [giveReference, setGiveReference] = useState("");
+  const [giveQty, setGiveQty] = useState<Record<string, string>>({});
+  const [installDate, setInstallDate] = useState(today());
+  const [installReference, setInstallReference] = useState("");
+  const [installQty, setInstallQty] = useState<Record<string, string>>({});
 
   const usingRemote = Boolean(supabase && !localOnly);
 
@@ -469,6 +482,34 @@ export default function App() {
       setSelectedWarrantyJobId(sortedWarrantyJobs[0].id);
     }
   }, [selectedWarrantyJobId, sortedWarrantyJobs]);
+
+  useEffect(() => {
+    if ((!selectedElectricianId || !technicians.some((holder) => holder.id === selectedElectricianId)) && technicians[0]) {
+      setSelectedElectricianId(technicians[0].id);
+    }
+  }, [selectedElectricianId, technicians]);
+
+  useEffect(() => {
+    if ((!giveWarehouseId || !warehouses.some((holder) => holder.id === giveWarehouseId)) && warehouses[0]) {
+      setGiveWarehouseId(warehouses[0].id);
+    }
+  }, [giveWarehouseId, warehouses]);
+
+  // Remove leftover placeholder electricians (e.g. "Electrician - 10") that have
+  // no stock history. Runs once after the first data load.
+  const staleCleanupDone = useRef(false);
+  useEffect(() => {
+    if (loading || staleCleanupDone.current) return;
+    const stale = data.holders.filter(
+      (holder) =>
+        STALE_ELECTRICIAN.test(holder.name) &&
+        !data.movements.some((movement) => movement.from_holder_id === holder.id || movement.to_holder_id === holder.id),
+    );
+    if (!stale.length) return;
+    staleCleanupDone.current = true;
+    void purgeHolders(stale.map((holder) => holder.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, data.holders, data.movements]);
 
   async function loadRemoteData() {
     if (!supabase) return;
@@ -641,6 +682,147 @@ export default function App() {
       setError(deleteError instanceof Error ? deleteError.message : "Could not delete movement.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function purgeHolders(ids: string[]) {
+    if (!ids.length) return;
+    try {
+      if (usingRemote && supabase) {
+        const { error: deleteError } = await supabase.from("holders").delete().in("id", ids);
+        if (deleteError) throw deleteError;
+      }
+      updateLocalOrState((current) => ({
+        ...current,
+        holders: current.holders.filter((holder) => !ids.includes(holder.id)),
+      }));
+    } catch {
+      // Cleanup is best-effort; ignore failures so the app still loads.
+    }
+  }
+
+  // Save several product lines in one go (batch issue or batch install).
+  async function saveBatch(
+    lines: { productId: string; quantity: number }[],
+    build: (line: { productId: string; quantity: number }) => Movement,
+    successMessage: string,
+  ) {
+    if (!lines.length) {
+      setError("Enter a quantity for at least one product.");
+      return false;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await saveMovements(lines.map(build));
+      setMessage(successMessage);
+      return true;
+    } catch (batchError) {
+      setError(batchError instanceof Error ? batchError.message : "Could not save these movements.");
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function collectLines(quantities: Record<string, string>) {
+    return activeProducts
+      .map((product) => ({ productId: product.id, quantity: Number(quantities[product.id]) }))
+      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+  }
+
+  async function handleGiveStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    const warehouse = warehouses.find((holder) => holder.id === giveWarehouseId);
+    if (!electrician || !warehouse) {
+      setError("Choose a warehouse and an electrician.");
+      return;
+    }
+
+    const lines = collectLines(giveQty);
+    for (const line of lines) {
+      const available = getBalance(goodBalanceMap, warehouse.id, line.productId);
+      if (available < line.quantity) {
+        const productName = activeProducts.find((product) => product.id === line.productId)?.name ?? "product";
+        setError(`${warehouse.name} only has ${available} of ${productName}.`);
+        return;
+      }
+    }
+
+    const createdAt = new Date().toISOString();
+    const ok = await saveBatch(
+      lines,
+      (line) => ({
+        id: crypto.randomUUID(),
+        movement_date: giveDate,
+        movement_type: "issue",
+        product_condition: "good",
+        product_id: line.productId,
+        quantity: line.quantity,
+        from_holder_id: warehouse.id,
+        to_holder_id: electrician.id,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
+        reference: giveReference.trim() || null,
+        tracking: null,
+        notes: null,
+        created_at: createdAt,
+      }),
+      `Stock given to ${electrician.name}.`,
+    );
+    if (ok) {
+      setGiveQty({});
+      setGiveReference("");
+    }
+  }
+
+  async function handleRecordInstall(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    if (!electrician) {
+      setError("Choose an electrician.");
+      return;
+    }
+
+    const lines = collectLines(installQty);
+    for (const line of lines) {
+      const available = getBalance(goodBalanceMap, electrician.id, line.productId);
+      if (available < line.quantity) {
+        const productName = activeProducts.find((product) => product.id === line.productId)?.name ?? "product";
+        setError(`${electrician.name} only has ${available} of ${productName} to install.`);
+        return;
+      }
+    }
+
+    const createdAt = new Date().toISOString();
+    const ok = await saveBatch(
+      lines,
+      (line) => ({
+        id: crypto.randomUUID(),
+        movement_date: installDate,
+        movement_type: "install",
+        product_condition: "good",
+        product_id: line.productId,
+        quantity: line.quantity,
+        from_holder_id: electrician.id,
+        to_holder_id: null,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
+        reference: installReference.trim() || null,
+        tracking: null,
+        notes: null,
+        created_at: createdAt,
+      }),
+      `Installation recorded for ${electrician.name}.`,
+    );
+    if (ok) {
+      setInstallQty({});
+      setInstallReference("");
     }
   }
 
@@ -1125,6 +1307,10 @@ export default function App() {
           <RefreshCw size={18} />
           Movements
         </button>
+        <button className={activeTab === "electricians" ? "active" : ""} type="button" onClick={() => setActiveTab("electricians")}>
+          <HardHat size={18} />
+          Electricians
+        </button>
         <button className={activeTab === "warranty" ? "active" : ""} type="button" onClick={() => setActiveTab("warranty")}>
           <ClipboardList size={18} />
           Warranty
@@ -1217,6 +1403,36 @@ export default function App() {
                 setSearchTerm={setSearchTerm}
               />
             </section>
+          ) : null}
+
+          {activeTab === "electricians" ? (
+            <ElectriciansView
+              technicians={technicians}
+              warehouses={warehouses}
+              activeProducts={activeProducts}
+              goodBalanceMap={goodBalanceMap}
+              faultyBalanceMap={faultyBalanceMap}
+              data={data}
+              selectedElectricianId={selectedElectricianId}
+              giveWarehouseId={giveWarehouseId}
+              giveDate={giveDate}
+              giveReference={giveReference}
+              giveQty={giveQty}
+              installDate={installDate}
+              installReference={installReference}
+              installQty={installQty}
+              submitting={submitting}
+              setSelectedElectricianId={setSelectedElectricianId}
+              setGiveWarehouseId={setGiveWarehouseId}
+              setGiveDate={setGiveDate}
+              setGiveReference={setGiveReference}
+              setGiveQty={setGiveQty}
+              setInstallDate={setInstallDate}
+              setInstallReference={setInstallReference}
+              setInstallQty={setInstallQty}
+              onGiveStock={handleGiveStock}
+              onRecordInstall={handleRecordInstall}
+            />
           ) : null}
 
           {activeTab === "warranty" ? (
@@ -2178,6 +2394,362 @@ function RouteLabel({ from, to }: { from: string; to: string }) {
   }
 
   return <span>{to || from || "Stock count"}</span>;
+}
+
+function ElectriciansView({
+  technicians,
+  warehouses,
+  activeProducts,
+  goodBalanceMap,
+  faultyBalanceMap,
+  data,
+  selectedElectricianId,
+  giveWarehouseId,
+  giveDate,
+  giveReference,
+  giveQty,
+  installDate,
+  installReference,
+  installQty,
+  submitting,
+  setSelectedElectricianId,
+  setGiveWarehouseId,
+  setGiveDate,
+  setGiveReference,
+  setGiveQty,
+  setInstallDate,
+  setInstallReference,
+  setInstallQty,
+  onGiveStock,
+  onRecordInstall,
+}: {
+  technicians: Holder[];
+  warehouses: Holder[];
+  activeProducts: Product[];
+  goodBalanceMap: Map<string, number>;
+  faultyBalanceMap: Map<string, number>;
+  data: StockData;
+  selectedElectricianId: string;
+  giveWarehouseId: string;
+  giveDate: string;
+  giveReference: string;
+  giveQty: Record<string, string>;
+  installDate: string;
+  installReference: string;
+  installQty: Record<string, string>;
+  submitting: boolean;
+  setSelectedElectricianId: (value: string) => void;
+  setGiveWarehouseId: (value: string) => void;
+  setGiveDate: (value: string) => void;
+  setGiveReference: (value: string) => void;
+  setGiveQty: (value: Record<string, string>) => void;
+  setInstallDate: (value: string) => void;
+  setInstallReference: (value: string) => void;
+  setInstallQty: (value: Record<string, string>) => void;
+  onGiveStock: (event: FormEvent<HTMLFormElement>) => void;
+  onRecordInstall: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
+  const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
+  const warehouseName = (id: string | null) => warehouses.find((holder) => holder.id === id)?.name ?? "";
+
+  if (!technicians.length) {
+    return (
+      <section className="empty-state">
+        <HardHat size={36} />
+        <h2>No electricians yet</h2>
+        <p className="muted">Add electricians on the Setup tab first.</p>
+      </section>
+    );
+  }
+
+  const history = electrician
+    ? [...data.movements]
+        .filter((movement) => movement.from_holder_id === electrician.id || movement.to_holder_id === electrician.id)
+        .sort(
+          (a, b) =>
+            b.movement_date.localeCompare(a.movement_date) || (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+        )
+    : [];
+
+  const sumByType = (type: MovementType, condition: ProductCondition, direction: "in" | "out") =>
+    history
+      .filter((movement) => movement.movement_type === type && getMovementCondition(movement) === condition)
+      .filter((movement) => (direction === "in" ? movement.to_holder_id === electrician?.id : movement.from_holder_id === electrician?.id))
+      .reduce((total, movement) => total + movement.quantity, 0);
+
+  const totalGiven = sumByType("issue", "good", "in");
+  const totalInstalled = sumByType("install", "good", "out");
+  const totalReturned = sumByType("return", "good", "out");
+  const totalFaulty = electrician
+    ? activeProducts.reduce((total, product) => total + getBalance(faultyBalanceMap, electrician.id, product.id), 0)
+    : 0;
+  const totalOnHand = electrician
+    ? activeProducts.reduce((total, product) => total + getBalance(goodBalanceMap, electrician.id, product.id), 0)
+    : 0;
+
+  return (
+    <section className="electricians-stack">
+      <div className="electricians-grid">
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Electricians</h2>
+              <p>{technicians.length} on the team</p>
+            </div>
+          </div>
+          <div className="job-list">
+            {technicians.map((holder) => {
+              const onHand = activeProducts.reduce(
+                (total, product) => total + getBalance(goodBalanceMap, holder.id, product.id),
+                0,
+              );
+              return (
+                <button
+                  className={selectedElectricianId === holder.id ? "job-row active" : "job-row"}
+                  type="button"
+                  onClick={() => setSelectedElectricianId(holder.id)}
+                  key={holder.id}
+                >
+                  <span>
+                    <strong>{holder.name}</strong>
+                    Electrician
+                  </span>
+                  <span className={onHand > 0 ? "status-chip ok" : "status-chip attention"}>{onHand} on hand</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="electricians-detail">
+          {electrician ? (
+            <>
+              <div className="metric-grid">
+                <div className="metric-card">
+                  <Boxes size={22} />
+                  <span>On Hand (good)</span>
+                  <strong>{totalOnHand.toLocaleString()}</strong>
+                </div>
+                <div className="metric-card">
+                  <Truck size={22} />
+                  <span>Given</span>
+                  <strong>{totalGiven.toLocaleString()}</strong>
+                </div>
+                <div className="metric-card">
+                  <PackageCheck size={22} />
+                  <span>Installed</span>
+                  <strong>{totalInstalled.toLocaleString()}</strong>
+                </div>
+                <div className="metric-card">
+                  <AlertTriangle size={22} />
+                  <span>Faulty Held</span>
+                  <strong>{totalFaulty.toLocaleString()}</strong>
+                </div>
+              </div>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>{electrician.name}</h2>
+                    <p>
+                      Current stock &middot; Returned {totalReturned.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="responsive-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>On hand (good)</th>
+                        <th>Faulty held</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeProducts.map((product) => (
+                        <tr key={product.id}>
+                          <td>
+                            <strong>{product.name}</strong>
+                            <span>{product.sku}</span>
+                          </td>
+                          <td>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                          <td>{getBalance(faultyBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <div className="electricians-forms">
+                <section className="panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Give Stock</h2>
+                      <p>Send several products to {electrician.name} in one go.</p>
+                    </div>
+                  </div>
+                  <form className="stack-form" onSubmit={onGiveStock}>
+                    <div className="form-row">
+                      <label>
+                        Date
+                        <input type="date" value={giveDate} onChange={(event) => setGiveDate(event.target.value)} required />
+                      </label>
+                      <label>
+                        From warehouse
+                        <select value={giveWarehouseId} onChange={(event) => setGiveWarehouseId(event.target.value)} required>
+                          {warehouses.map((holder) => (
+                            <option value={holder.id} key={holder.id}>
+                              {holder.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="qty-list">
+                      {activeProducts.map((product) => (
+                        <div className="qty-row" key={product.id}>
+                          <div className="qty-name">
+                            <strong>{product.name}</strong>
+                            <span>{getBalance(goodBalanceMap, giveWarehouseId, product.id).toLocaleString()} in warehouse</span>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={giveQty[product.id] ?? ""}
+                            onChange={(event) => setGiveQty({ ...giveQty, [product.id]: event.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <label>
+                      Reference
+                      <input
+                        value={giveReference}
+                        onChange={(event) => setGiveReference(event.target.value)}
+                        placeholder="Pickup slip"
+                      />
+                    </label>
+                    <button className="primary-button" type="submit" disabled={submitting || !warehouses.length}>
+                      <Truck size={18} />
+                      Give stock
+                    </button>
+                  </form>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Record Installation</h2>
+                      <p>Enter how many {electrician.name} installed. This removes them from their stock.</p>
+                    </div>
+                  </div>
+                  <form className="stack-form" onSubmit={onRecordInstall}>
+                    <label>
+                      Date
+                      <input type="date" value={installDate} onChange={(event) => setInstallDate(event.target.value)} required />
+                    </label>
+                    <div className="qty-list">
+                      {activeProducts.map((product) => (
+                        <div className="qty-row" key={product.id}>
+                          <div className="qty-name">
+                            <strong>{product.name}</strong>
+                            <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0"
+                            value={installQty[product.id] ?? ""}
+                            onChange={(event) => setInstallQty({ ...installQty, [product.id]: event.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <label>
+                      Reference / job
+                      <input
+                        value={installReference}
+                        onChange={(event) => setInstallReference(event.target.value)}
+                        placeholder="Job number"
+                      />
+                    </label>
+                    <button className="primary-button" type="submit" disabled={submitting}>
+                      <PackageCheck size={18} />
+                      Record installation
+                    </button>
+                  </form>
+                </section>
+              </div>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Movement History</h2>
+                    <p>{history.length.toLocaleString()} movements for {electrician.name}</p>
+                  </div>
+                </div>
+                <div className="responsive-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Product</th>
+                        <th>In</th>
+                        <th>Out</th>
+                        <th>Reference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((movement) => {
+                        const isIn = movement.to_holder_id === electrician.id;
+                        return (
+                          <tr key={movement.id}>
+                            <td>{formatDate(movement.movement_date)}</td>
+                            <td>
+                              <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                                {movementLabels[movement.movement_type]}
+                              </span>
+                              <span>{conditionLabels[getMovementCondition(movement)]}</span>
+                            </td>
+                            <td>{productName(movement.product_id)}</td>
+                            <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
+                            <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
+                            <td>
+                              {[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
+                                .filter(Boolean)
+                                .join(" / ")}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {history.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="muted">
+                            No movements yet for this electrician.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          ) : (
+            <section className="empty-state">
+              <HardHat size={36} />
+              <h2>Select an electrician</h2>
+            </section>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function SetupView({
