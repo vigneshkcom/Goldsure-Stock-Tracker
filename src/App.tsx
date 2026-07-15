@@ -359,6 +359,14 @@ function sortWarrantyJobs(jobs: WarrantyJob[]) {
 type Tab = "dashboard" | "movements" | "electricians" | "warranty" | "setup";
 type AdjustmentDirection = "in" | "out";
 
+const tabMeta: Record<Tab, { title: string; section: string }> = {
+  dashboard: { title: "Inventory overview", section: "Control centre" },
+  electricians: { title: "Field inventory", section: "Operations" },
+  warranty: { title: "Warranty operations", section: "Customer service" },
+  movements: { title: "Movement ledger", section: "Stock control" },
+  setup: { title: "Workspace settings", section: "Administration" },
+};
+
 export default function App() {
   const [data, setData] = useState<StockData>(emptyData);
   const [loading, setLoading] = useState(true);
@@ -1807,43 +1815,83 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <img className="brand-logo" src="/assets/goldsure-logo.png" alt="" onError={(event) => (event.currentTarget.style.display = "none")} />
-          <h1>Goldsure Stock Tracker</h1>
-        </div>
-        <div className="topbar-actions">
+      <aside className="sidebar">
+        <header className="topbar">
+          <div className="brand">
+            <img className="brand-logo" src="/assets/goldsure-logo.png" alt="" onError={(event) => (event.currentTarget.style.display = "none")} />
+            <div className="brand-copy">
+              <span>Goldsure</span>
+              <strong>Stock tracker</strong>
+            </div>
+          </div>
+        </header>
+
+        <nav className="tabs" aria-label="Views">
+          <button
+            className={activeTab === "dashboard" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "dashboard" ? "page" : undefined}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            <Boxes size={18} />
+            Dashboard
+          </button>
+          <button
+            className={activeTab === "electricians" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "electricians" ? "page" : undefined}
+            onClick={() => setActiveTab("electricians")}
+          >
+            <HardHat size={18} />
+            Electricians
+          </button>
+          <button
+            className={activeTab === "warranty" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "warranty" ? "page" : undefined}
+            onClick={() => setActiveTab("warranty")}
+          >
+            <ClipboardList size={18} />
+            Warranty
+          </button>
+          <button
+            className={activeTab === "movements" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "movements" ? "page" : undefined}
+            onClick={() => setActiveTab("movements")}
+          >
+            <RefreshCw size={18} />
+            Movements
+          </button>
+          <button
+            className={activeTab === "setup" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "setup" ? "page" : undefined}
+            onClick={() => setActiveTab("setup")}
+          >
+            <Wrench size={18} />
+            Setup
+          </button>
+        </nav>
+
+        <div className="sidebar-footer">
           <span className={`status-pill ${usingRemote ? "cloud" : "local"}`}>
             {usingRemote ? <Cloud size={16} /> : <Database size={16} />}
             {usingRemote ? "Shared cloud" : "This device only"}
           </span>
         </div>
-      </header>
+      </aside>
 
-      <nav className="tabs" aria-label="Views">
-        <button className={activeTab === "dashboard" ? "active" : ""} type="button" onClick={() => setActiveTab("dashboard")}>
-          <Boxes size={18} />
-          Dashboard
-        </button>
-        <button className={activeTab === "electricians" ? "active" : ""} type="button" onClick={() => setActiveTab("electricians")}>
-          <HardHat size={18} />
-          Electricians
-        </button>
-        <button className={activeTab === "warranty" ? "active" : ""} type="button" onClick={() => setActiveTab("warranty")}>
-          <ClipboardList size={18} />
-          Warranty
-        </button>
-        <button className={activeTab === "movements" ? "active" : ""} type="button" onClick={() => setActiveTab("movements")}>
-          <RefreshCw size={18} />
-          Movements
-        </button>
-        <button className={activeTab === "setup" ? "active" : ""} type="button" onClick={() => setActiveTab("setup")}>
-          <Wrench size={18} />
-          Setup
-        </button>
-      </nav>
+      <section className="app-main">
+        <header className="page-header">
+          <div>
+            <span>{tabMeta[activeTab].section}</span>
+            <h1>{tabMeta[activeTab].title}</h1>
+          </div>
+        </header>
 
-      {loading ? (
+        <div className="page-content">
+          {loading ? (
         <section className="loading-panel">
           <RefreshCw className="spin" size={24} />
           Loading stock data
@@ -2061,7 +2109,9 @@ export default function App() {
             />
           ) : null}
         </>
-      )}
+          )}
+        </div>
+      </section>
 
       {composeOpen ? (
         <ComposeEmailModal
