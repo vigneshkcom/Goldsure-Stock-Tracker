@@ -39,7 +39,7 @@ import {
   type PickupLine,
   type StockReportInput,
 } from "./pickupSlip";
-import { buildReportPdfBase64 } from "./reportPdf";
+import { buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
 import type {
   BalanceRow,
   Holder,
@@ -1076,9 +1076,8 @@ export default function App() {
     }
   }
 
-  // Build the slip data (recipients + inner HTML) from the current selection.
-  // Emails omit the letterhead logo (the signature carries it); print includes it.
-  function buildSlipForSelected(withLogo = false) {
+  // Build the slip inputs (recipients + PickupSlipInput) from the current selection.
+  function buildSlipForSelected() {
     const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
     if (!electrician) return null;
     const lines: PickupLine[] = activeProducts
@@ -1091,7 +1090,7 @@ export default function App() {
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
     if (!lines.length) return null;
 
-    const slipInner = buildPickupSlipInner({
+    const slipInput = {
       requestDate: formatSlipDate(today()),
       releaseDate: formatSlipDate(pickupReleaseDate),
       recipientName: electrician.name,
@@ -1099,25 +1098,29 @@ export default function App() {
       recipientPhone: electrician.phone ?? "",
       lines,
       notes: pickupNotes,
-      logoUrl: withLogo ? logoDataUri : undefined,
-    });
+    };
 
     const cc = [...pickupConfig.freight.cc];
     if (electrician.email) cc.push(electrician.email);
 
     return {
       electrician,
-      slipInner,
+      slipInput,
       to: pickupConfig.freight.to,
       cc,
       subject: `Stock Release Request - ${electrician.name} - ${formatSlipDate(pickupReleaseDate)}`,
     };
   }
 
+  function attachmentFileName(name: string) {
+    const firstName = name.trim().split(/\s+/)[0] || "Electrician";
+    return `${firstName} ${formatSlipDate(today())}.pdf`;
+  }
+
   function defaultSlipMessage(electricianName: string) {
-    return `Hi Damien,\n\nPlease find our stock release request below for ${electricianName}, with a requested release date of ${formatSlipDate(
+    return `Hi Damien,\n\nPlease find our stock release request attached for ${electricianName}, with a requested release date of ${formatSlipDate(
       pickupReleaseDate,
-    )}.\n\nCould you please arrange the items below for pickup? Let me know if you need anything further.\n\nThanks`;
+    )}.\n\nCould you please arrange the items for pickup? Let me know if you need anything further.`;
   }
 
   // Open the review/edit modal for a pickup slip instead of sending straight away.
@@ -1130,8 +1133,12 @@ export default function App() {
       return;
     }
     setComposeKind("pickup");
-    setComposeBodyInner(slip.slipInner);
-    setComposeAttachment(null);
+    // Email body: slip table without the footer (footer lives in the PDF).
+    setComposeBodyInner(buildPickupSlipInner({ ...slip.slipInput, withFooter: false }));
+    setComposeAttachment({
+      filename: attachmentFileName(slip.electrician.name),
+      content: buildPickupPdfBase64(slip.slipInput),
+    });
     setComposeTo(slip.to.join(", "));
     setComposeSubject(slip.subject);
     setComposeCc(slip.cc.join(", "));
@@ -1239,21 +1246,21 @@ export default function App() {
     setComposeKind("report");
     setComposeBodyInner(bodyInner);
     setComposeAttachment({
-      filename: `Stock report - ${report.electrician.name} - ${report.asOfDate}.pdf`,
+      filename: attachmentFileName(report.electrician.name),
       content: pdf,
     });
     setComposeTo(report.electrician.email ?? "");
     setComposeCc("");
     setComposeSubject(`Goldsure stock report - ${report.electrician.name} - as of ${report.asOfDate}`);
     setComposeMessage(
-      `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Your stock on hand and this week's installs are below, with the full report attached as a PDF.\n\nThanks`,
+      `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Your stock on hand and this week's installs are below, with the full report attached as a PDF.`,
     );
     setComposeOpen(true);
   }
 
   function handlePrintPickupSlip() {
     setError(null);
-    const slip = buildSlipForSelected(true);
+    const slip = buildSlipForSelected();
     if (!slip) {
       setError("Enter a quantity for at least one product first.");
       return;
@@ -1263,7 +1270,7 @@ export default function App() {
       setError("Allow pop-ups for this site to preview or print the slip.");
       return;
     }
-    preview.document.write(wrapDocument(slip.slipInner));
+    preview.document.write(wrapDocument(buildPickupSlipInner({ ...slip.slipInput, logoUrl: logoDataUri, withFooter: true })));
     preview.document.close();
     preview.focus();
     setTimeout(() => preview.print(), 300);

@@ -16,6 +16,7 @@ export type PickupSlipInput = {
   lines: PickupLine[];
   notes: string;
   logoUrl?: string; // absolute URL so it also works in email
+  withFooter?: boolean; // Requested By / Company / Notes block (default true)
 };
 
 function escapeHtml(value: string): string {
@@ -33,15 +34,26 @@ export function formatSlipDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
-// Wrap inner HTML in a full document (used for the print preview and the email).
+// Wrap inner HTML in a full document. A centered fixed-width table keeps the
+// layout from stretching edge-to-edge in Outlook (which ignores max-width).
 export function wrapDocument(innerHtml: string): string {
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
-<body style="margin:0;padding:24px;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-  <div style="max-width:900px;margin:0 auto;">
-    ${innerHtml}
-  </div>
+<body style="margin:0;padding:0;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+    <tr>
+      <td align="center" style="padding:24px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="760" style="width:760px;max-width:760px;border-collapse:collapse;">
+          <tr>
+            <td style="font-family:Arial,Helvetica,sans-serif;color:#111827;">
+              ${innerHtml}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
 }
@@ -61,7 +73,8 @@ export function messageToHtml(message: string): string {
 export function buildSignatureHtml(): string {
   const { signature } = pickupConfig;
   return `
-  <div style="margin-top:24px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#111111;">
+  <p style="margin:20px 0 0;font-size:14px;color:#111111;">Regards,</p>
+  <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#111111;">
     <span style="font-size:15px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
     <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
     <br />
@@ -136,14 +149,17 @@ export function buildPickupSlipInner(input: PickupSlipInput): string {
       </tr>
       ${productRows}
     </table>
-
-    <div style="margin-top:22px;font-size:13px;line-height:1.6;">
+    ${
+      input.withFooter === false
+        ? ""
+        : `<div style="margin-top:22px;font-size:13px;line-height:1.6;">
       <div>Requested By: ${escapeHtml(company.requestedBy)}</div>
       <div>Company: ${escapeHtml(company.name)}</div>
       <div style="margin-top:14px;">Notes:</div>
       ${notesLines ? `<div>${notesLines}</div>` : ""}
       <div>Contact ${escapeHtml(company.requestedBy.split(" ")[0])} for any clarifications on ${escapeHtml(company.phone)} or ${escapeHtml(company.email)}</div>
-    </div>`;
+    </div>`
+    }`;
 }
 
 // Full standalone document (used for the print preview).

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
-import type { StockReportInput } from "./pickupSlip";
+import type { PickupSlipInput, StockReportInput } from "./pickupSlip";
+import { cartonsForSku, pickupConfig } from "./pickupConfig";
 
 const MARGIN = 40;
 
@@ -71,6 +72,80 @@ export function buildReportPdfBase64(input: StockReportInput): string {
       y + 26,
     );
   }
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.slice(dataUri.indexOf(",") + 1);
+}
+
+// The full Stock Release Request (pickup slip) as a PDF base64 string.
+export function buildPickupPdfBase64(input: PickupSlipInput): string {
+  const { company, freight } = pickupConfig;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const yellow: [number, number, number] = [255, 241, 0];
+  const grey: [number, number, number] = [243, 244, 246];
+  const gridStyles = { fontSize: 9, cellPadding: 4, lineColor: [120, 120, 120] as [number, number, number], lineWidth: 0.5, textColor: 20 };
+
+  // Header info block (title + dates + warehouse).
+  autoTable(doc, {
+    startY: MARGIN,
+    theme: "grid",
+    styles: gridStyles,
+    margin: { left: MARGIN, right: MARGIN },
+    columnStyles: { 0: { cellWidth: 360, fontStyle: "bold" } },
+    body: [
+      [{ content: `${company.name.toUpperCase()} - Stock Release Request`, colSpan: 2, styles: { halign: "center", fontStyle: "bold" } }],
+      ["Date of Request", { content: input.requestDate, styles: { fillColor: yellow, fontStyle: "bold" } }],
+      ["Requested Release Date", { content: input.releaseDate, styles: { fillColor: yellow, fontStyle: "bold" } }],
+      ["Warehouse", `${freight.name} - ${freight.address}  Phone: ${freight.phone}`],
+    ] as RowInput[],
+  });
+
+  // Product table with merged recipient columns.
+  const productBody: RowInput[] = input.lines.map((line, index) => {
+    const row: RowInput = [
+      `${line.productName}${line.sku ? `\n${line.sku}` : ""}`,
+      { content: String(line.quantity), styles: { halign: "center" } },
+      { content: cartonsForSku(line.sku, line.quantity) || "-", styles: { halign: "center" } },
+      { content: line.mode, styles: { halign: "center" } },
+    ] as RowInput;
+    if (index === 0) {
+      const merged = { rowSpan: input.lines.length, styles: { valign: "middle" as const, halign: "center" as const } };
+      (row as unknown[]).push(
+        { content: input.recipientName, ...merged },
+        { content: input.recipientAddress, ...merged },
+        { content: input.recipientPhone, ...merged },
+      );
+    }
+    return row;
+  });
+
+  autoTable(doc, {
+    startY: lastY(doc),
+    theme: "grid",
+    styles: gridStyles,
+    headStyles: { fillColor: grey, textColor: 20, fontStyle: "bold", halign: "center" },
+    margin: { left: MARGIN, right: MARGIN },
+    head: [["Product Description", "Quantity", "No. Of Cartons", "Delivery or Pickup", "Recipient Name", "Delivery Address", "Contact Number"]],
+    body: productBody,
+  });
+
+  let y = lastY(doc) + 24;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(0, 0, 0);
+  const firstName = company.requestedBy.split(" ")[0];
+  const footerLines = [
+    `Requested By: ${company.requestedBy}`,
+    `Company: ${company.name}`,
+    "",
+    "Notes:",
+    ...(input.notes ? input.notes.split("\n") : []),
+    `Contact ${firstName} for any clarifications on ${company.phone} or ${company.email}`,
+  ];
+  footerLines.forEach((line) => {
+    doc.text(line, MARGIN, y);
+    y += 15;
+  });
 
   const dataUri = doc.output("datauristring");
   return dataUri.slice(dataUri.indexOf(",") + 1);
