@@ -314,6 +314,48 @@ td span {
   text-align: right;
 }
 
+.dashboard-data-table {
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.dashboard-data-table col.label-column {
+  width: 36%;
+}
+
+.dashboard-data-table col.numeric-column,
+.dashboard-data-table col.status-column {
+  width: 16%;
+}
+
+.product-totals-table th:nth-child(2),
+.product-totals-table th:nth-child(3),
+.product-totals-table th:nth-child(4),
+.product-totals-table td:nth-child(2),
+.product-totals-table td:nth-child(3),
+.product-totals-table td:nth-child(4) {
+  text-align: right;
+}
+
+.product-totals-table th:last-child,
+.product-totals-table td:last-child {
+  text-align: center;
+}
+
+.dashboard-data-table td.numeric-cell {
+  color: #292a36;
+  font-size: 1.04rem;
+  font-weight: 680;
+  line-height: 1.35;
+}
+
+.dashboard-data-table td.total-cell {
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 820;
+}
+
 .negative-cell {
   color: var(--red);
   background: var(--red-soft);
@@ -1511,8 +1553,11 @@ td span,
 
 .metric-card strong {
   color: var(--ink);
-  font-size: 2.15rem;
+  font-size: 2.55rem;
   font-weight: 840;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  line-height: 1;
 }
 
 .panel {
@@ -2128,7 +2173,7 @@ textarea:focus {
   }
 
   .metric-card strong {
-    font-size: 1.85rem;
+    font-size: 2.15rem;
   }
 
   .movement-form,
@@ -2175,7 +2220,7 @@ textarea:focus {
   }
 
   .metric-card strong {
-    font-size: 1.55rem;
+    font-size: 1.85rem;
   }
 
   .modal-footer {

@@ -2285,7 +2285,14 @@ function DashboardView({
         </div>
 
         <div className="responsive-table">
-          <table>
+          <table className="dashboard-data-table product-totals-table">
+            <colgroup>
+              <col className="label-column" />
+              <col className="numeric-column" />
+              <col className="numeric-column" />
+              <col className="numeric-column" />
+              <col className="status-column" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Product</th>
@@ -2302,9 +2309,9 @@ function DashboardView({
                     <strong>{row.product.name}</strong>
                     <span>{row.product.sku}</span>
                   </td>
-                  <td>{row.warehouseTotal.toLocaleString()}</td>
-                  <td>{row.fieldTotal.toLocaleString()}</td>
-                  <td>{row.total.toLocaleString()}</td>
+                  <td className="numeric-cell">{row.warehouseTotal.toLocaleString()}</td>
+                  <td className="numeric-cell">{row.fieldTotal.toLocaleString()}</td>
+                  <td className="numeric-cell total-cell">{row.total.toLocaleString()}</td>
                   <td>
                     <span className={row.total > 0 ? "status-chip ok" : "status-chip attention"}>
                       {row.total > 0 ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
@@ -2331,7 +2338,14 @@ function DashboardView({
         </div>
 
         <div className="responsive-table matrix-table">
-          <table>
+          <table className="dashboard-data-table stock-on-hand-table">
+            <colgroup>
+              <col className="label-column" />
+              {activeProducts.map((product) => (
+                <col className="numeric-column" key={product.id} />
+              ))}
+              <col className="numeric-column" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Holder</th>
@@ -2357,12 +2371,12 @@ function DashboardView({
                     {activeProducts.map((product) => {
                       const value = getBalance(balanceMap, holder.id, product.id);
                       return (
-                        <td className={value < 0 ? "negative-cell" : ""} key={product.id}>
-                          {value ? value.toLocaleString() : ""}
+                        <td className={value < 0 ? "numeric-cell negative-cell" : "numeric-cell"} key={product.id}>
+                          {value.toLocaleString()}
                         </td>
                       );
                     })}
-                    <td>{rowTotal ? rowTotal.toLocaleString() : ""}</td>
+                    <td className="numeric-cell total-cell">{rowTotal.toLocaleString()}</td>
                   </tr>
                 );
               })}
