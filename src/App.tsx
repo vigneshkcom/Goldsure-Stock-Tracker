@@ -2288,10 +2288,10 @@ function DashboardView({
           <table className="dashboard-data-table product-totals-table">
             <colgroup>
               <col className="label-column" />
-              <col className="numeric-column" />
-              <col className="numeric-column" />
-              <col className="numeric-column" />
-              <col className="status-column" />
+              <col className="data-column" />
+              <col className="data-column" />
+              <col className="data-column" />
+              <col className="data-column" />
             </colgroup>
             <thead>
               <tr>
@@ -2342,9 +2342,9 @@ function DashboardView({
             <colgroup>
               <col className="label-column" />
               {activeProducts.map((product) => (
-                <col className="numeric-column" key={product.id} />
+                <col className="data-column" key={product.id} />
               ))}
-              <col className="trailing-column" />
+              <col className="data-column" />
             </colgroup>
             <thead>
               <tr>

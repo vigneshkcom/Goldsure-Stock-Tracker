@@ -309,45 +309,29 @@ td span {
   min-width: 860px;
 }
 
-.matrix-table th:not(:first-child),
-.matrix-table td:not(:first-child) {
-  text-align: right;
-}
-
 .dashboard-data-table {
   table-layout: fixed;
+  min-width: 832px;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
 .dashboard-data-table col.label-column {
-  width: 30%;
+  width: 38.461538%;
 }
 
-.dashboard-data-table col.numeric-column {
-  width: 15%;
+.dashboard-data-table col.data-column {
+  width: 15.384615%;
 }
 
-.dashboard-data-table col.status-column,
-.dashboard-data-table col.trailing-column {
-  width: 25%;
-}
-
-.product-totals-table th:nth-child(2),
-.product-totals-table th:nth-child(3),
-.product-totals-table th:nth-child(4),
-.product-totals-table td:nth-child(2),
-.product-totals-table td:nth-child(3),
-.product-totals-table td:nth-child(4) {
-  text-align: right;
-}
-
-.product-totals-table th:last-child,
-.product-totals-table td:last-child,
-.stock-on-hand-table th:last-child,
-.stock-on-hand-table td:last-child {
+.dashboard-data-table th:first-child,
+.dashboard-data-table td:first-child {
   text-align: left;
-  padding-left: 48px;
+}
+
+.dashboard-data-table th:not(:first-child),
+.dashboard-data-table td:not(:first-child) {
+  text-align: center;
 }
 
 .dashboard-data-table td.numeric-cell {
