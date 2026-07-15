@@ -321,12 +321,16 @@ td span {
 }
 
 .dashboard-data-table col.label-column {
-  width: 36%;
+  width: 30%;
 }
 
-.dashboard-data-table col.numeric-column,
-.dashboard-data-table col.status-column {
-  width: 16%;
+.dashboard-data-table col.numeric-column {
+  width: 15%;
+}
+
+.dashboard-data-table col.status-column,
+.dashboard-data-table col.trailing-column {
+  width: 25%;
 }
 
 .product-totals-table th:nth-child(2),
@@ -339,8 +343,10 @@ td span {
 }
 
 .product-totals-table th:last-child,
-.product-totals-table td:last-child {
-  text-align: center;
+.product-totals-table td:last-child,
+.stock-on-hand-table th:last-child,
+.stock-on-hand-table td:last-child {
+  text-align: left;
 }
 
 .dashboard-data-table td.numeric-cell {

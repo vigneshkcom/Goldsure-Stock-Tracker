@@ -2344,7 +2344,7 @@ function DashboardView({
               {activeProducts.map((product) => (
                 <col className="numeric-column" key={product.id} />
               ))}
-              <col className="numeric-column" />
+              <col className="trailing-column" />
             </colgroup>
             <thead>
               <tr>
