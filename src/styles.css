@@ -10,8 +10,8 @@
   --ink: #171821;
   --muted: #686b7b;
   --panel: #ffffff;
-  --line: #e1e3ec;
-  --line-strong: #cbd0df;
+  --line: #e4e7e0;
+  --line-strong: #cdd2c6;
   --soft: #f1f2f7;
 --primary: #4b55e7;
 --primary-deep: #343cad;
@@ -23,7 +23,7 @@
   --blue-soft: #e9f4fa;
   --canvas: #f5f6fa;
   --sidebar: #ffffff;
-  --accent-soft: #eef0ff;
+  --accent-soft: #e7f7d8;
   --orchid: #8d3f87;
   --rose: #bd365f;
   --shadow: 0 12px 32px rgba(29, 31, 47, 0.065);
@@ -145,7 +145,7 @@ button:disabled {
   margin: 8px 0 22px;
   padding: 5px;
   background: #f1f2f7;
-  border: 1px solid #e1e3ec;
+  border: 1px solid #e4e7e0;
   border-radius: 10px;
   width: fit-content;
 }
@@ -484,7 +484,7 @@ textarea {
   min-height: 42px;
   color: var(--ink);
   background: #ffffff;
-  border: 1px solid #cbd0df;
+  border: 1px solid #cdd2c6;
   border-radius: 8px;
   padding: 9px 11px;
   outline: none;
@@ -513,7 +513,7 @@ textarea:focus {
   min-height: 42px;
   padding: 4px;
   background: #f1f2f7;
-  border: 1px solid #e1e3ec;
+  border: 1px solid #e4e7e0;
   border-radius: 10px;
 }
 
@@ -533,7 +533,7 @@ textarea:focus {
   height: 42px;
   padding: 0 10px;
   color: var(--muted);
-  border: 1px solid #cbd0df;
+  border: 1px solid #cdd2c6;
   border-radius: 8px;
   background: #ffffff;
 }
@@ -702,7 +702,7 @@ textarea:focus {
 .job-row:hover,
 .job-row.active {
   background: var(--accent-soft);
-  border-color: #c9cdfb;
+  border-color: #bfe6a3;
 }
 
 .job-row strong {
@@ -800,7 +800,7 @@ textarea:focus {
 .notice.success {
   color: var(--primary-deep);
   background: var(--accent-soft);
-  border: 1px solid #c9cdfb;
+  border: 1px solid #bfe6a3;
 }
 
 .empty-state,
@@ -1707,7 +1707,7 @@ td strong {
 .ghost-button:hover {
   color: var(--primary-deep);
   background: var(--accent-soft);
-  border-color: #c3c8fa;
+  border-color: #bfe6a3;
 }
 
 .ghost-button {
@@ -1725,7 +1725,7 @@ td strong {
 .icon-button:hover {
   color: var(--primary-deep);
   background: var(--accent-soft);
-  border-color: #c3c8fa;
+  border-color: #bfe6a3;
 }
 
 .icon-button.danger {
@@ -1867,7 +1867,7 @@ textarea:focus {
 .job-row.active {
   color: var(--ink);
   background: var(--accent-soft);
-  border-color: #c3c8fa;
+  border-color: #bfe6a3;
   box-shadow: 0 6px 18px rgba(75, 85, 231, 0.08);
 }
 
@@ -1906,7 +1906,7 @@ textarea:focus {
 .notice.success {
   color: var(--primary-deep);
   background: var(--accent-soft);
-  border-color: #c9cdfb;
+  border-color: #bfe6a3;
 }
 
 .empty-state,
@@ -2480,7 +2480,7 @@ textarea:focus,
   background: #e2f2ee;
 }
 
-/* Scrollbars: sage green-grey to match the theme (was a lavender #c9ccda). */
+/* Scrollbars: sage green-grey to match the theme (was a lavender #aebfa4). */
 html {
   scrollbar-color: #aebfa4 transparent;
   scrollbar-width: thin;
