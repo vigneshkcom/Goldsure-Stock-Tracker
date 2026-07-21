@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Cloud,
   Database,
+  Download,
   DownloadCloud,
   Factory,
   HardHat,
@@ -40,7 +41,7 @@ import {
   type PickupLine,
   type StockReportInput,
 } from "./pickupSlip";
-import { buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
+import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
 import type {
   BalanceRow,
   Holder,
@@ -417,6 +418,8 @@ export default function App() {
   const [changeQuantity, setChangeQuantity] = useState("1");
   const [changeNotes, setChangeNotes] = useState("");
   const [packQty, setPackQty] = useState<Record<string, string>>({});
+  const [packType, setPackType] = useState<"warranty" | "oneoff">("warranty");
+  const [packReference, setPackReference] = useState("");
 
   const [selectedElectricianId, setSelectedElectricianId] = useState("");
   const [giveWarehouseId, setGiveWarehouseId] = useState("");
@@ -1272,10 +1275,6 @@ export default function App() {
   function openComposePackRequest() {
     setError(null);
     setMessage(null);
-    if (!selectedWarrantyJob) {
-      setError("Select a warranty job first.");
-      return;
-    }
     const lines = activeProducts
       .map((product) => ({ product: product.name, sku: product.sku, quantity: Number(packQty[product.id]) }))
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
@@ -1284,21 +1283,20 @@ export default function App() {
       return;
     }
 
+    const now = new Date();
+    const requestDate = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+    const requestType = packType === "warranty" ? "Warranty" : "One-Off Post";
+    const reference = packReference.trim() || (packType === "warranty" && selectedWarrantyJob ? selectedWarrantyJob.job_number : "");
+    const packInput = { requestType, reference, requestDate, lines };
+
     setComposeKind("pack");
-    setComposeBodyInner(
-      buildPackRequestInner({
-        jobNumber: selectedWarrantyJob.job_number,
-        customerName: selectedWarrantyJob.customer_name,
-        customerAddress: selectedWarrantyJob.customer_address ?? "",
-        lines,
-      }),
-    );
-    setComposeAttachment(null);
+    setComposeBodyInner(buildPackRequestInner(packInput));
+    setComposeAttachment({ filename: `stock-pickup-request-${requestDate}.pdf`, content: buildPackPdfBase64(packInput) });
     setComposeTo(pickupConfig.freight.to.join(", "));
     setComposeCc(pickupConfig.freight.cc.join(", "));
-    setComposeSubject(`Pack request - ${selectedWarrantyJob.job_number} - ${selectedWarrantyJob.customer_name}`);
+    setComposeSubject(`Stock pickup request - ${requestDate}${reference ? ` - Reference ${reference}` : ""}`);
     setComposeMessage(
-      `Hi Damien,\n\nWe'd like the items below packed for ${selectedWarrantyJob.customer_name} (job ${selectedWarrantyJob.job_number}). Could you please pack them and send me the dimensions? I'll send the shipping labels.`,
+      "Hi Damien,\n\nWe would like to post stock out to a customer. Please pack the items listed below and send me the carton dimensions and weight. I will send the shipping labels once you provide them.",
     );
     setComposeOpen(true);
   }
@@ -1366,6 +1364,7 @@ export default function App() {
       }
       if (composeKind === "pack") {
         setPackQty({});
+        setPackReference("");
       }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Could not send the email.");
@@ -2121,6 +2120,10 @@ export default function App() {
               setWarrantyDate={setWarrantyDate}
               packQty={packQty}
               setPackQty={setPackQty}
+              packType={packType}
+              setPackType={setPackType}
+              packReference={packReference}
+              setPackReference={setPackReference}
               onRequestPack={openComposePackRequest}
             />
           ) : null}
@@ -2165,6 +2168,7 @@ export default function App() {
           cc={composeCc}
           message={composeMessage}
           sending={sendingSlip}
+          attachment={composeAttachment}
           setTo={setComposeTo}
           setSubject={setComposeSubject}
           setCc={setComposeCc}
@@ -2177,12 +2181,26 @@ export default function App() {
   );
 }
 
+// Turn a base64 PDF attachment into a local download.
+function downloadBase64Pdf(filename: string, base64: string) {
+  const bytes = atob(base64);
+  const buffer = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i += 1) buffer[i] = bytes.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([buffer], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function ComposeEmailModal({
   to,
   subject,
   cc,
   message,
   sending,
+  attachment,
   setTo,
   setSubject,
   setCc,
@@ -2195,6 +2213,7 @@ function ComposeEmailModal({
   cc: string;
   message: string;
   sending: boolean;
+  attachment: { filename: string; content: string } | null;
   setTo: (value: string) => void;
   setSubject: (value: string) => void;
   setCc: (value: string) => void;
@@ -2236,6 +2255,17 @@ function ComposeEmailModal({
         </div>
 
         <div className="modal-footer">
+          {attachment ? (
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => downloadBase64Pdf(attachment.filename, attachment.content)}
+              disabled={sending}
+            >
+              <Download size={17} />
+              Download PDF
+            </button>
+          ) : null}
           <button className="ghost-button" type="button" onClick={onCancel} disabled={sending}>
             Cancel
           </button>
@@ -2777,6 +2807,10 @@ function WarrantyView({
   setWarrantyDate,
   packQty,
   setPackQty,
+  packType,
+  setPackType,
+  packReference,
+  setPackReference,
   onRequestPack,
 }: {
   activeProducts: Product[];
@@ -2827,6 +2861,10 @@ function WarrantyView({
   setWarrantyDate: (value: string) => void;
   packQty: Record<string, string>;
   setPackQty: (value: Record<string, string>) => void;
+  packType: "warranty" | "oneoff";
+  setPackType: (value: "warranty" | "oneoff") => void;
+  packReference: string;
+  setPackReference: (value: string) => void;
   onRequestPack: () => void;
 }) {
   const term = searchTerm.trim().toLowerCase();
@@ -2971,18 +3009,34 @@ function WarrantyView({
         </section>
       </section>
 
-      {selectedJob ? (
-        <section className="panel">
+      <section className="panel">
           <div className="panel-header">
             <div>
               <h2>Request Pack from Specific Freight</h2>
               <p>
-                {selectedJob.job_number} — {selectedJob.customer_name}. Emails Specific Freight (Damien Doyle, CC{" "}
-                {pickupConfig.freight.cc.join(", ")}) to pack these and send dimensions. Does not move stock.
+                Emails Specific Freight (Damien Doyle, CC {pickupConfig.freight.cc.join(", ")}) to pack stock for posting to a
+                customer and send dimensions. Opens a preview you can edit, with a PDF download. Does not move stock.
               </p>
             </div>
           </div>
           <div className="stack-form">
+            <div className="warranty-form">
+              <label>
+                Request type
+                <select value={packType} onChange={(event) => setPackType(event.target.value as "warranty" | "oneoff")}>
+                  <option value="warranty">Warranty</option>
+                  <option value="oneoff">One-Off Post</option>
+                </select>
+              </label>
+              <label>
+                Reference
+                <input
+                  value={packReference}
+                  onChange={(event) => setPackReference(event.target.value)}
+                  placeholder={selectedJob ? `${selectedJob.job_number} (job)` : "Customer reference number"}
+                />
+              </label>
+            </div>
             <div className="qty-list">
               {activeProducts.map((product) => {
                 const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
@@ -3009,12 +3063,11 @@ function WarrantyView({
             <div className="form-actions">
               <button className="primary-button" type="button" onClick={onRequestPack}>
                 <Truck size={18} />
-                Send pack request
+                Review pack request
               </button>
             </div>
           </div>
         </section>
-      ) : null}
 
       {selectedJob ? (
         <section className="warranty-grid">

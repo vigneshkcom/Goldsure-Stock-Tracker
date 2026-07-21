@@ -185,13 +185,15 @@ export type ReportEmailBodyInput = {
 };
 
 export type PackRequestInput = {
-  jobNumber: string;
-  customerName: string;
-  customerAddress: string;
+  requestType: string;
+  reference: string;
+  requestDate: string;
   lines: { product: string; sku: string | null; quantity: number }[];
 };
 
 // Body for the "please pack these" request to Specific Freight (customer post).
+// Kept generic: no customer name, only a reference. Plain, full words, no
+// apostrophes or em dashes so the email reads professionally.
 export function buildPackRequestInner(input: PackRequestInput): string {
   const rows = input.lines
     .map(
@@ -206,8 +208,9 @@ export function buildPackRequestInner(input: PackRequestInput): string {
       ${rows}
     </table>
     <div style="margin-top:16px;font-size:13px;line-height:1.6;color:#111111;">
-      <div><strong>Customer:</strong> ${escapeHtml(input.customerName)}${input.jobNumber ? ` &middot; Job ${escapeHtml(input.jobNumber)}` : ""}</div>
-      ${input.customerAddress ? `<div><strong>Deliver to:</strong> ${escapeHtml(input.customerAddress)}</div>` : ""}
+      <div><strong>Request type:</strong> ${escapeHtml(input.requestType)}</div>
+      <div><strong>Reference:</strong> ${escapeHtml(input.reference || "Not provided")}</div>
+      <div><strong>Date of request:</strong> ${escapeHtml(input.requestDate)}</div>
     </div>`;
 }
 
