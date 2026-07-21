@@ -83,25 +83,29 @@ export function buildPackPdfBase64(input: PackRequestInput): string {
   const { company, freight } = pickupConfig;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
 
-  doc.setFontSize(18);
+  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.text("Stock Pickup Request", MARGIN, MARGIN + 6);
-  doc.setFontSize(11);
+  doc.setTextColor(31, 122, 68);
+  doc.text("Goldsure", MARGIN, MARGIN + 8);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.text("Stock Pickup Request", MARGIN, MARGIN + 32);
+  doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(90, 90, 90);
-  doc.text(`Date of request ${input.requestDate}`, MARGIN, MARGIN + 24);
+  doc.text(`Date of request ${input.requestDate}`, MARGIN, MARGIN + 48);
 
   autoTable(doc, {
-    startY: MARGIN + 44,
+    startY: MARGIN + 66,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4, lineColor: [120, 120, 120], lineWidth: 0.5, textColor: 20 },
     margin: { left: MARGIN, right: MARGIN },
     columnStyles: { 0: { cellWidth: 150, fontStyle: "bold" } },
     body: [
-      ["Request type", input.requestType],
       ["Reference", input.reference || "Not provided"],
       ["Warehouse", `${freight.name} - ${freight.address}`],
-      ["Requested by", company.requestedBy],
+      ["Requested by", `${company.requestedBy}, Goldsure`],
     ] as RowInput[],
   });
 
@@ -122,16 +126,11 @@ export function buildPackPdfBase64(input: PackRequestInput): string {
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
-  const notes = [
-    "Please pack the items above and provide the carton dimensions and weight.",
-    "Shipping labels will be sent once the dimensions are received.",
-    "",
+  doc.text(
     `Contact ${company.requestedBy.split(" ")[0]} on ${company.phone} or ${company.email} for any clarifications.`,
-  ];
-  notes.forEach((line) => {
-    doc.text(line, MARGIN, y);
-    y += 15;
-  });
+    MARGIN,
+    y,
+  );
 
   const dataUri = doc.output("datauristring");
   return dataUri.slice(dataUri.indexOf(",") + 1);

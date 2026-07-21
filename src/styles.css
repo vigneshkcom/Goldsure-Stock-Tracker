@@ -134,8 +134,8 @@ button:disabled {
 }
 
 .status-pill.local {
-  color: #4a5a68;
-  background: #eaeef2;
+  color: #4a5a4e;
+  background: #e2e8dd;
 }
 
 .tabs {
@@ -2262,7 +2262,7 @@ textarea:focus {
   --primary-deep: #1f7a44;
   --accent-soft: #e7f7d8;
   --on-primary: #10230f;
-  --canvas: #eef0ec;
+  --canvas: #e8ebe6;
   --sidebar: #ffffff;
   --panel: #ffffff;
   --soft: #f1f3ef;

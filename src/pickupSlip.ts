@@ -73,17 +73,15 @@ export function messageToHtml(message: string): string {
 export function buildSignatureHtml(): string {
   const { signature } = pickupConfig;
   return `
-  <p style="margin:20px 0 0;font-size:14px;color:#111111;">Regards,</p>
-  <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#111111;">
+  <div style="margin-top:22px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;color:#111111;">
     <span style="font-size:15px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
     <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
+    <span style="font-weight:bold;color:#1f7a44;">${escapeHtml(signature.company)}</span><br />
     <br />
     <strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:#111111;">${escapeHtml(signature.email)}</a><br />
     <strong>p:</strong> ${escapeHtml(signature.phone)}<br />
     <strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:#111111;">${escapeHtml(signature.web)}</a>
-  </div>
-  <p style="font-size:10px;color:#8a8a8a;line-height:1.45;max-width:840px;margin:18px 0 0;">CONFIDENTIAL EMAIL MESSAGE | This is a confidential message to be read only by the recipient named above. Information on this email, including any attachments, may contain information which is confidential. If you are not the named recipient you must not read, copy, use the email or any information on it, in any way. Any unauthorised use may be the subject of legal proceedings against you. Therefore, please contact the sender immediately by telephone, fax or email at the numbers above if you have received this message in error. It is requested that thereafter this email and any attachments thereto be destroyed.</p>
-  <p style="font-size:11px;color:#2e7d32;margin:8px 0 0;">Please consider the environment before printing this email</p>`;
+  </div>`;
 }
 
 export function buildPickupSlipInner(input: PickupSlipInput): string {
@@ -208,7 +206,6 @@ export function buildPackRequestInner(input: PackRequestInput): string {
       ${rows}
     </table>
     <div style="margin-top:16px;font-size:13px;line-height:1.6;color:#111111;">
-      <div><strong>Request type:</strong> ${escapeHtml(input.requestType)}</div>
       <div><strong>Reference:</strong> ${escapeHtml(input.reference || "Not provided")}</div>
       <div><strong>Date of request:</strong> ${escapeHtml(input.requestDate)}</div>
     </div>`;

@@ -12,6 +12,7 @@ export const pickupConfig = {
   signature: {
     name: "Vignesh Kirubakaran",
     title: "Operations Manager",
+    company: "Goldsure",
     email: "vignesh@goldsure.com.au",
     phone: "(07) 2146 1500",
     web: "www.goldsure.com.au",
