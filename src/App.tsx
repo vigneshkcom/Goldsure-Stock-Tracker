@@ -1335,7 +1335,7 @@ export default function App() {
     setComposeCc(pickupConfig.freight.cc.join(", "));
     setComposeSubject(`Stock pickup request - ${requestDate}${reference ? ` - Reference ${reference}` : ""}`);
     setComposeMessage(
-      "Hi Damien,\n\nCould you please pack the items listed below for delivery to a customer and provide the carton/package dimensions and total weight?\n\nOnce I receive these details, I will send through the shipping labels.\n\nThanks,\nVignesh",
+      "Hi Damien,\n\nCould you please pack the items listed below for delivery to a customer and provide the carton/package dimensions and total weight?\n\nOnce I receive these details, I will send through the shipping labels.",
     );
     setComposeOpen(true);
   }
