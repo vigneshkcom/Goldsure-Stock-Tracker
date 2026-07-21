@@ -128,7 +128,11 @@ const statusChipClass: Record<WarrantyJobStatus, string> = {
   cancelled: "status-closed",
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+function localDateValue(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+const today = () => localDateValue(new Date());
 
 // Placeholder electricians seeded with no real name, e.g. "Electrician - 10".
 const STALE_ELECTRICIAN = /^electrician\s*-\s*\d+$/i;
@@ -245,7 +249,7 @@ function weekEndingSunday(value: string) {
   const date = new Date(`${value}T00:00:00`);
   const day = date.getDay();
   if (day !== 0) date.setDate(date.getDate() + (7 - day));
-  return date.toISOString().slice(0, 10);
+  return localDateValue(date);
 }
 
 function formatWeekEnding(value: string) {
@@ -262,7 +266,7 @@ function recentWeekEndings(count: number) {
   const weeks: string[] = [];
   const date = new Date(`${weekEndingSunday(today())}T00:00:00`);
   for (let i = 0; i < count; i += 1) {
-    weeks.push(date.toISOString().slice(0, 10));
+    weeks.push(localDateValue(date));
     date.setDate(date.getDate() - 7);
   }
   return weeks;
@@ -2957,7 +2961,6 @@ function WarrantyView({
       .includes(term),
   );
 
-  const openJobs = jobs.filter((job) => job.status !== "completed" && job.status !== "cancelled").length;
   const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
   const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
   const faultyTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "faulty_collect", "faulty"), 0);
@@ -2992,7 +2995,6 @@ function WarrantyView({
           <div className="panel-header">
             <div>
               <h2>Create Job</h2>
-              <p>{openJobs} open or posted jobs</p>
             </div>
           </div>
 
