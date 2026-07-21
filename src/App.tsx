@@ -442,6 +442,7 @@ export default function App() {
   const [pickupReleaseDate, setPickupReleaseDate] = useState(today());
   const [pickupQty, setPickupQty] = useState<Record<string, string>>({});
   const [pickupNotes, setPickupNotes] = useState("");
+  const [pickupMode, setPickupMode] = useState<"Pickup" | "Delivery">("Pickup");
   const [sendingSlip, setSendingSlip] = useState(false);
   const [lossDate, setLossDate] = useState(today());
   const [lossQty, setLossQty] = useState<Record<string, string>>({});
@@ -1134,7 +1135,7 @@ export default function App() {
         productName: product.name,
         sku: product.sku,
         quantity: Number(pickupQty[product.id]),
-        mode: "Pickup",
+        mode: pickupMode,
       }))
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
     if (!lines.length) return null;
@@ -1157,7 +1158,7 @@ export default function App() {
       slipInput,
       to: pickupConfig.freight.to,
       cc,
-      subject: `Stock Release Request - ${electrician.name} - ${formatSlipDate(pickupReleaseDate)}`,
+      subject: `${pickupMode === "Delivery" ? "Stock Delivery Request" : "Stock Release Request"} - ${electrician.name} - ${formatSlipDate(pickupReleaseDate)}`,
     };
   }
 
@@ -1167,6 +1168,9 @@ export default function App() {
   }
 
   function defaultSlipMessage(electricianName: string) {
+    if (pickupMode === "Delivery") {
+      return `Hi Damien,\n\nCould you please pack the stock listed below for ${electricianName} and provide the carton/package dimensions and total weight?\n\nOnce I receive these details, I will send through the shipping labels.`;
+    }
     return `Hi Damien,\n\nPlease find our stock release request attached for ${electricianName}, with a requested release date of ${formatSlipDate(
       pickupReleaseDate,
     )}.\n\nCould you please arrange the items for pickup? Let me know if you need anything further.`;
@@ -2094,10 +2098,12 @@ export default function App() {
               pickupReleaseDate={pickupReleaseDate}
               pickupQty={pickupQty}
               pickupNotes={pickupNotes}
+              pickupMode={pickupMode}
               sendingSlip={sendingSlip}
               setPickupReleaseDate={setPickupReleaseDate}
               setPickupQty={setPickupQty}
               setPickupNotes={setPickupNotes}
+              setPickupMode={setPickupMode}
               lossDate={lossDate}
               lossQty={lossQty}
               lossCharged={lossCharged}
@@ -3448,10 +3454,12 @@ function ElectriciansView({
   pickupReleaseDate,
   pickupQty,
   pickupNotes,
+  pickupMode,
   sendingSlip,
   setPickupReleaseDate,
   setPickupQty,
   setPickupNotes,
+  setPickupMode,
   lossDate,
   lossQty,
   lossCharged,
@@ -3497,10 +3505,12 @@ function ElectriciansView({
   pickupReleaseDate: string;
   pickupQty: Record<string, string>;
   pickupNotes: string;
+  pickupMode: "Pickup" | "Delivery";
   sendingSlip: boolean;
   setPickupReleaseDate: (value: string) => void;
   setPickupQty: (value: Record<string, string>) => void;
   setPickupNotes: (value: string) => void;
+  setPickupMode: (value: "Pickup" | "Delivery") => void;
   lossDate: string;
   lossQty: Record<string, string>;
   lossCharged: boolean;
@@ -3822,12 +3832,34 @@ function ElectriciansView({
                   <div>
                     <h2>Request Stock — Pickup Slip</h2>
                     <p>
-                      Emails a Stock Release Request to Specific Freight (Damien Doyle), CC {pickupConfig.freight.cc.join(", ")}
+                      {pickupMode === "Delivery"
+                        ? "Asks Specific Freight (Damien Doyle) to pack the stock and send dimensions so you can post it out"
+                        : "Emails a Stock Release Request to Specific Freight (Damien Doyle) to arrange pickup"}
+                      , CC {pickupConfig.freight.cc.join(", ")}
                       {electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"}.
                     </p>
                   </div>
                 </div>
                 <div className="stack-form">
+                  <div className="seg-field">
+                    <span className="seg-label">Fulfilment</span>
+                    <div className="segmented" role="group" aria-label="Fulfilment method">
+                      <button
+                        type="button"
+                        className={pickupMode === "Pickup" ? "active" : ""}
+                        onClick={() => setPickupMode("Pickup")}
+                      >
+                        Pickup
+                      </button>
+                      <button
+                        type="button"
+                        className={pickupMode === "Delivery" ? "active" : ""}
+                        onClick={() => setPickupMode("Delivery")}
+                      >
+                        Delivery
+                      </button>
+                    </div>
+                  </div>
                   <label>
                     Requested release date
                     <input
