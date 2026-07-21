@@ -29,6 +29,7 @@ import { workbookSeed } from "./data/seed";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { pickupConfig, cartonsForSku } from "./pickupConfig";
 import {
+  buildPackRequestInner,
   buildPickupSlipHtml,
   buildPickupSlipInner,
   buildReportEmailBodyInner,
@@ -415,6 +416,7 @@ export default function App() {
   const [changeTechnicianId, setChangeTechnicianId] = useState("");
   const [changeQuantity, setChangeQuantity] = useState("1");
   const [changeNotes, setChangeNotes] = useState("");
+  const [packQty, setPackQty] = useState<Record<string, string>>({});
 
   const [selectedElectricianId, setSelectedElectricianId] = useState("");
   const [giveWarehouseId, setGiveWarehouseId] = useState("");
@@ -435,7 +437,7 @@ export default function App() {
   const [lossNotes, setLossNotes] = useState("");
   const [logoDataUri, setLogoDataUri] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
-  const [composeKind, setComposeKind] = useState<"pickup" | "report">("pickup");
+  const [composeKind, setComposeKind] = useState<"pickup" | "report" | "pack">("pickup");
   const [composeBodyInner, setComposeBodyInner] = useState("");
   const [composeAttachment, setComposeAttachment] = useState<{ filename: string; content: string } | null>(null);
   const [composeTo, setComposeTo] = useState("");
@@ -1266,6 +1268,41 @@ export default function App() {
     setComposeOpen(true);
   }
 
+  // Warranty: ask Specific Freight to pack items for a customer post.
+  function openComposePackRequest() {
+    setError(null);
+    setMessage(null);
+    if (!selectedWarrantyJob) {
+      setError("Select a warranty job first.");
+      return;
+    }
+    const lines = activeProducts
+      .map((product) => ({ product: product.name, sku: product.sku, quantity: Number(packQty[product.id]) }))
+      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+    if (!lines.length) {
+      setError("Enter a quantity for at least one product to pack.");
+      return;
+    }
+
+    setComposeKind("pack");
+    setComposeBodyInner(
+      buildPackRequestInner({
+        jobNumber: selectedWarrantyJob.job_number,
+        customerName: selectedWarrantyJob.customer_name,
+        customerAddress: selectedWarrantyJob.customer_address ?? "",
+        lines,
+      }),
+    );
+    setComposeAttachment(null);
+    setComposeTo(pickupConfig.freight.to.join(", "));
+    setComposeCc(pickupConfig.freight.cc.join(", "));
+    setComposeSubject(`Pack request - ${selectedWarrantyJob.job_number} - ${selectedWarrantyJob.customer_name}`);
+    setComposeMessage(
+      `Hi Damien,\n\nWe'd like the items below packed for ${selectedWarrantyJob.customer_name} (job ${selectedWarrantyJob.job_number}). Could you please pack them and send me the dimensions? I'll send the shipping labels.`,
+    );
+    setComposeOpen(true);
+  }
+
   function handlePrintPickupSlip() {
     setError(null);
     const slip = buildSlipForSelected();
@@ -1319,11 +1356,16 @@ export default function App() {
       if (!response.ok) {
         throw new Error(result.error || "Could not send the email.");
       }
-      setMessage(`${composeKind === "report" ? "Stock report" : "Pickup slip"} emailed to ${to.join(", ")}.`);
+      const label =
+        composeKind === "report" ? "Stock report" : composeKind === "pack" ? "Pack request" : "Pickup slip";
+      setMessage(`${label} emailed to ${to.join(", ")}.`);
       setComposeOpen(false);
       if (composeKind === "pickup") {
         setPickupQty({});
         setPickupNotes("");
+      }
+      if (composeKind === "pack") {
+        setPackQty({});
       }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Could not send the email.");
@@ -2077,6 +2119,9 @@ export default function App() {
               setSearchTerm={setWarrantySearch}
               setSelectedJobId={setSelectedWarrantyJobId}
               setWarrantyDate={setWarrantyDate}
+              packQty={packQty}
+              setPackQty={setPackQty}
+              onRequestPack={openComposePackRequest}
             />
           ) : null}
 
@@ -2730,6 +2775,9 @@ function WarrantyView({
   setSearchTerm,
   setSelectedJobId,
   setWarrantyDate,
+  packQty,
+  setPackQty,
+  onRequestPack,
 }: {
   activeProducts: Product[];
   changeProductId: string;
@@ -2777,6 +2825,9 @@ function WarrantyView({
   setSearchTerm: (value: string) => void;
   setSelectedJobId: (value: string) => void;
   setWarrantyDate: (value: string) => void;
+  packQty: Record<string, string>;
+  setPackQty: (value: Record<string, string>) => void;
+  onRequestPack: () => void;
 }) {
   const term = searchTerm.trim().toLowerCase();
   const filteredJobs = jobs.filter((job) =>
@@ -2919,6 +2970,51 @@ function WarrantyView({
           </div>
         </section>
       </section>
+
+      {selectedJob ? (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Request Pack from Specific Freight</h2>
+              <p>
+                {selectedJob.job_number} — {selectedJob.customer_name}. Emails Specific Freight (Damien Doyle, CC{" "}
+                {pickupConfig.freight.cc.join(", ")}) to pack these and send dimensions. Does not move stock.
+              </p>
+            </div>
+          </div>
+          <div className="stack-form">
+            <div className="qty-list">
+              {activeProducts.map((product) => {
+                const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+                return (
+                  <div className="qty-row" key={product.id}>
+                    <div className="qty-name">
+                      <strong>{product.name}</strong>
+                      <span>
+                        {freight ? `${getBalance(goodBalanceMap, freight.id, product.id).toLocaleString()} at Specific Freight` : " "}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={packQty[product.id] ?? ""}
+                      onChange={(event) => setPackQty({ ...packQty, [product.id]: event.target.value })}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="form-actions">
+              <button className="primary-button" type="button" onClick={onRequestPack}>
+                <Truck size={18} />
+                Send pack request
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {selectedJob ? (
         <section className="warranty-grid">

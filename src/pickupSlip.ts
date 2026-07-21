@@ -184,6 +184,33 @@ export type ReportEmailBodyInput = {
   installedThisWeek: { product: string; qty: number }[];
 };
 
+export type PackRequestInput = {
+  jobNumber: string;
+  customerName: string;
+  customerAddress: string;
+  lines: { product: string; sku: string | null; quantity: number }[];
+};
+
+// Body for the "please pack these" request to Specific Freight (customer post).
+export function buildPackRequestInner(input: PackRequestInput): string {
+  const rows = input.lines
+    .map(
+      (line) =>
+        `<tr><td style="${cell}"><strong>${escapeHtml(line.product)}</strong>${line.sku ? `<br/>${escapeHtml(line.sku)}` : ""}</td><td style="${cell};text-align:center;">${line.quantity.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
+  return `
+    <table style="border-collapse:collapse;font-size:13px;min-width:360px;">
+      <tr><th style="${head}">Product to pack</th><th style="${head}">Quantity</th></tr>
+      ${rows}
+    </table>
+    <div style="margin-top:16px;font-size:13px;line-height:1.6;color:#111111;">
+      <div><strong>Customer:</strong> ${escapeHtml(input.customerName)}${input.jobNumber ? ` &middot; Job ${escapeHtml(input.jobNumber)}` : ""}</div>
+      ${input.customerAddress ? `<div><strong>Deliver to:</strong> ${escapeHtml(input.customerAddress)}</div>` : ""}
+    </div>`;
+}
+
 // The short email body: stock on hand and this week's installs. Full detail is
 // in the attached PDF.
 export function buildReportEmailBodyInner(input: ReportEmailBodyInput): string {
