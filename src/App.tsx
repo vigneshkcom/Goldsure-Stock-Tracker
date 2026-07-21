@@ -518,7 +518,16 @@ export default function App() {
   );
 
   const totalStock = productTotals.reduce((total, row) => total + row.total, 0);
-  const totalFaultyStock = faultyBalances.reduce((total, row) => total + row.quantity, 0);
+  const specificFreightTotals = useMemo(() => {
+    const specificFreight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight"));
+    return PRODUCT_ORDER.map((sku) => {
+      const product = activeProducts.find((item) => `${item.sku ?? ""} ${item.name}`.toUpperCase().includes(sku));
+      return {
+        sku,
+        quantity: specificFreight && product ? getBalance(goodBalanceMap, specificFreight.id, product.id) : 0,
+      };
+    });
+  }, [activeProducts, goodBalanceMap, warehouses]);
   const latestMovement = useMemo(
     () =>
       [...data.movements].sort(
@@ -2027,13 +2036,11 @@ export default function App() {
               activeHolders={visibleDashboardHolders}
               activeProducts={activeProducts}
               balanceMap={goodBalanceMap}
-              holderCount={activeHolders.length}
               latestMovement={latestMovement}
-              movementCount={data.movements.length}
               negativeBalances={negativeBalances}
               productTotals={productTotals}
+              specificFreightTotals={specificFreightTotals}
               totalStock={totalStock}
-              totalFaultyStock={totalFaultyStock}
               lossSummary={lossSummary}
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
@@ -2364,13 +2371,11 @@ function DashboardView({
   activeHolders,
   activeProducts,
   balanceMap,
-  holderCount,
   latestMovement,
-  movementCount,
   negativeBalances,
   productTotals,
+  specificFreightTotals,
   totalStock,
-  totalFaultyStock,
   lossSummary,
   seedWorkbookSnapshot,
   canSeed,
@@ -2379,13 +2384,11 @@ function DashboardView({
   activeHolders: Holder[];
   activeProducts: Product[];
   balanceMap: Map<string, number>;
-  holderCount: number;
   latestMovement: Movement | undefined;
-  movementCount: number;
   negativeBalances: BalanceRow[];
   productTotals: ProductTotalRow[];
+  specificFreightTotals: { sku: string; quantity: number }[];
   totalStock: number;
-  totalFaultyStock: number;
   lossSummary: { holder: Holder; lost: number; charged: number; unchargedUnits: number }[];
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
@@ -2399,24 +2402,22 @@ function DashboardView({
       <div className="metric-grid">
         <div className="metric-card">
           <Boxes size={22} />
-          <span>Good Stock</span>
+          <span className="metric-label">
+            Good Stock
+            <small>All locations</small>
+          </span>
           <strong>{totalStock.toLocaleString()}</strong>
         </div>
-        <div className="metric-card">
-          <AlertTriangle size={22} />
-          <span>Faulty Held</span>
-          <strong>{totalFaultyStock.toLocaleString()}</strong>
-        </div>
-        <div className="metric-card">
-          <Users size={22} />
-          <span>Holders</span>
-          <strong>{holderCount}</strong>
-        </div>
-        <div className="metric-card">
-          <RefreshCw size={22} />
-          <span>Movements</span>
-          <strong>{movementCount}</strong>
-        </div>
+        {specificFreightTotals.map((item) => (
+          <div className="metric-card" key={item.sku}>
+            <Factory size={22} />
+            <span className="metric-label">
+              {item.sku}
+              <small>Specific Freight</small>
+            </span>
+            <strong>{item.quantity.toLocaleString()}</strong>
+          </div>
+        ))}
       </div>
 
       <section className="panel">
@@ -3336,6 +3337,23 @@ function TrackingLink({ tracking }: { tracking: string | null | undefined }) {
   );
 }
 
+function LinkifiedText({ value }: { value: string }) {
+  const parts = value.split(/(https?:\/\/[^\s]+)/gi);
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^https?:\/\//i.test(part) ? (
+          <a className="reference-link" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
+            {part}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 function LedgerView({
   data,
   filteredMovements,
@@ -3413,7 +3431,12 @@ function LedgerView({
                 </strong>
                 <span className="ledger-route">
                   {routeText(movement)}
-                  {reference ? ` · ${reference}` : ""}
+                  {reference ? (
+                    <>
+                      {" · "}
+                      <LinkifiedText value={reference} />
+                    </>
+                  ) : null}
                   {movement.tracking ? " · " : ""}
                   <TrackingLink tracking={movement.tracking} />
                 </span>
@@ -4093,9 +4116,11 @@ function ElectriciansView({
                             <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
                             <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
                             <td>
-                              {[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
-                                .filter(Boolean)
-                                .join(" / ")}
+                              <LinkifiedText
+                                value={[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
+                                  .filter(Boolean)
+                                  .join(" / ")}
+                              />
                               {movement.tracking ? " " : ""}
                               <TrackingLink tracking={movement.tracking} />
                             </td>

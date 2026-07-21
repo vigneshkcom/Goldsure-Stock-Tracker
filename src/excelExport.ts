@@ -106,35 +106,62 @@ export function buildStockTrackerWorkbook(data: StockData, exportedAt = new Date
   const faultyBalances = calculateBalanceMap(data, "faulty");
   const balance = (map: Map<string, number>, holderId: string, productId: string) => map.get(`${holderId}:${productId}`) ?? 0;
 
-  const totalGood = Array.from(goodBalances.values()).reduce((total, quantity) => total + quantity, 0);
-  const totalFaulty = Array.from(faultyBalances.values()).reduce((total, quantity) => total + quantity, 0);
+  const dashboardHolders = data.holders.filter(
+    (holder) => holder.active && (holder.holder_type === "warehouse" || holder.holder_type === "technician"),
+  );
+  const dashboardProducts = data.products.filter((product) => product.active);
+  const totalGood = dashboardProducts.reduce(
+    (total, product) =>
+      total + dashboardHolders.reduce((holderTotal, holder) => holderTotal + balance(goodBalances, holder.id, product.id), 0),
+    0,
+  );
+  const specificFreight = data.holders.find(
+    (holder) => holder.active && holder.holder_type === "warehouse" && holder.name.toLowerCase().includes("specific freight"),
+  );
+  const specificFreightTotals = ["RH638-AC-RF", "RH638-B-RF", "RHRC2"].map((sku) => {
+    const product = dashboardProducts.find((item) => `${item.sku ?? ""} ${item.name}`.toUpperCase().includes(sku));
+    return {
+      sku,
+      quantity: specificFreight && product ? balance(goodBalances, specificFreight.id, product.id) : 0,
+    };
+  });
 
   const overview = workbook.addWorksheet("Overview", { views: [{ showGridLines: false }] });
-  overview.columns = [{ width: 28 }, { width: 24 }];
+  overview.columns = [{ width: 30 }, { width: 24 }, { width: 18 }];
   overview.getCell("A1").value = "Goldsure Stock Tracker Export";
   overview.getCell("A1").font = { bold: true, size: 18, color: { argb: colours.title } };
-  overview.mergeCells("A1:B1");
-  overview.getCell("A3").value = "Metric";
-  overview.getCell("B3").value = "Value";
-  overview.getRow(3).eachCell((cell) => {
+  overview.mergeCells("A1:C1");
+  overview.getCell("A2").value = "Exported at";
+  overview.getCell("B2").value = exportedAt;
+  overview.getCell("B2").numFmt = "dd mmm yyyy hh:mm";
+  overview.getCell("A4").value = "Dashboard metric";
+  overview.getCell("B4").value = "Location";
+  overview.getCell("C4").value = "Quantity";
+  overview.getRow(4).eachCell((cell) => {
     cell.font = { bold: true, color: { argb: colours.headerText } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colours.header } };
   });
   overview.addRows([
-    ["Exported at", exportedAt],
+    ["Good Stock", "All locations", totalGood],
+    ...specificFreightTotals.map((item) => [item.sku, "Specific Freight", item.quantity]),
+    [],
+    ["Data included", "Records"],
     ["Products", data.products.length],
     ["Holders", data.holders.length],
     ["Movements", data.movements.length],
     ["Warranty jobs", data.warrantyJobs.length],
-    ["Good stock", totalGood],
-    ["Faulty stock held", totalFaulty],
+    [],
+    ["This workbook is a point-in-time export of all data loaded in the Stock Tracker."],
   ]);
-  overview.getCell("B4").numFmt = "dd mmm yyyy hh:mm";
-  overview.getCell("A12").value = "This workbook is a point-in-time export of all data loaded in the Stock Tracker.";
-  overview.getCell("A12").font = { italic: true, color: { argb: colours.muted } };
-  overview.getCell("A12").alignment = { wrapText: true, vertical: "top" };
-  overview.getRow(12).height = 32;
-  overview.mergeCells("A12:B12");
+  overview.getRow(10).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: colours.headerText } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colours.header } };
+  });
+  overview.getColumn("C").numFmt = "#,##0";
+  overview.getCell("A16").font = { italic: true, color: { argb: colours.muted } };
+  overview.getCell("A16").alignment = { wrapText: true, vertical: "top" };
+  overview.getRow(16).height = 32;
+  overview.mergeCells("A16:C16");
 
   const currentStockRows = data.holders.flatMap((holder) =>
     data.products.map((product) => {

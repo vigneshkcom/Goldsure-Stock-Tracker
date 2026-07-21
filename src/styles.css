@@ -239,6 +239,17 @@ td span,
   letter-spacing: 0;
 }
 
+.metric-label {
+  display: grid;
+  gap: 1px;
+}
+
+.metric-label small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
 .panel {
   overflow: hidden;
 }
@@ -934,6 +945,14 @@ textarea:focus {
 
 a.tracking-chip {
   text-decoration: underline;
+}
+
+.reference-link {
+  color: var(--primary-deep);
+  font-weight: 680;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .electricians-stack {
