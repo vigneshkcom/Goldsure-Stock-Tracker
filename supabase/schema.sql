@@ -45,6 +45,9 @@ create table if not exists public.warranty_jobs (
   updated_at timestamptz not null default now()
 );
 
+-- Warranty vs one-off-post classification for jobs (safe to run repeatedly).
+alter table public.warranty_jobs add column if not exists job_type text not null default 'warranty';
+
 create table if not exists public.stock_movements (
   id uuid primary key default gen_random_uuid(),
   user_id uuid,

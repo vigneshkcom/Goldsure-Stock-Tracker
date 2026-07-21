@@ -134,8 +134,8 @@ button:disabled {
 }
 
 .status-pill.local {
-  color: #71346d;
-  background: var(--plum-soft);
+  color: #4a5a68;
+  background: #eaeef2;
 }
 
 .tabs {
@@ -2249,4 +2249,215 @@ textarea:focus {
   .page-header {
     display: none !important;
   }
+}
+
+/* ============================================================
+   Wise light-theme skin. Appended last so it wins the cascade.
+   Lime-green primary with dark on-primary text, deep-green
+   accents, warm sage canvas. Layout and markup are untouched.
+   ============================================================ */
+:root {
+  color: var(--ink);
+  --primary: #9fe870;
+  --primary-deep: #1f7a44;
+  --accent-soft: #e7f7d8;
+  --on-primary: #10230f;
+  --canvas: #eef0ec;
+  --sidebar: #ffffff;
+  --panel: #ffffff;
+  --soft: #f1f3ef;
+  --line: #e4e7e0;
+  --line-strong: #cdd2c6;
+  --ink: #16211a;
+  --muted: #5f6a60;
+  --blue: #2f6f9c;
+  --blue-soft: #e6f1f8;
+  --plum: #6b5bd0;
+  --plum-soft: #eeecfa;
+  --shadow: 0 12px 32px rgba(20, 30, 20, 0.06);
+  --shadow-strong: 0 22px 56px rgba(20, 30, 20, 0.12);
+}
+
+body {
+  background: var(--canvas);
+}
+
+/* Primary buttons: lime fill, dark text. */
+.primary-button {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 8px 18px rgba(31, 122, 68, 0.2);
+}
+
+.primary-button:hover {
+  color: var(--on-primary);
+  background: #8fdd5f;
+  border-color: #8fdd5f;
+  box-shadow: 0 10px 22px rgba(31, 122, 68, 0.26);
+}
+
+/* Sidebar active nav + accent bar. */
+.tabs button.active {
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+}
+
+.tabs button::before {
+  background: var(--primary);
+}
+
+/* Secondary / ghost / icon button hovers (drop the old indigo borders). */
+.secondary-button:hover,
+.icon-text-button:hover,
+.ghost-button:hover,
+.icon-button:hover {
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+  border-color: #bfe6a3;
+}
+
+/* Job rows. */
+.job-row:hover,
+.job-row.active {
+  background: var(--accent-soft);
+  border-color: #bfe6a3;
+  box-shadow: 0 6px 18px rgba(31, 122, 68, 0.08);
+}
+
+/* Notices. */
+.notice.success {
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+  border-color: #bfe6a3;
+}
+
+/* Positive / ok chips. */
+.status-chip.ok,
+.type-chip.positive {
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+}
+
+.empty-state svg,
+.loading-panel svg {
+  color: var(--primary-deep);
+}
+
+/* Segmented toggle used for the job-type control. */
+.seg-field {
+  display: grid;
+  gap: 7px;
+}
+
+.seg-label {
+  color: var(--ink-soft, var(--muted));
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.segmented button {
+  flex: 1;
+  min-height: 40px;
+  padding: 0 16px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  font-size: 0.87rem;
+  font-weight: 720;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.segmented button:hover {
+  color: var(--ink);
+}
+
+.segmented button.active {
+  color: var(--ink);
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(20, 30, 20, 0.1);
+}
+
+/* Job list: type tag + status select. */
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.job-type-tag {
+  padding: 2px 9px;
+  font-size: 0.68rem;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.job-status-select {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.job-status-select.status-open {
+  color: #5d6a5f;
+  background: var(--soft);
+  border-color: var(--line-strong);
+}
+
+.job-status-select.status-posted {
+  color: #1c5d84;
+  background: var(--blue-soft);
+  border-color: #bcd8e8;
+}
+
+.job-status-select.status-replaced {
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+  border-color: #bfe6a3;
+}
+
+.job-status-select.status-closed {
+  color: #6b6f68;
+  background: #eceee9;
+  border-color: var(--line-strong);
+}
+
+/* Metric-card accents: cohesive green / blue / teal / slate (no purple or pink). */
+.metric-card:nth-child(3)::after {
+  background: #2f8f86;
+}
+
+.metric-card:nth-child(3) svg {
+  color: #227a72;
+  background: #e2f1ef;
+}
+
+.metric-card:nth-child(4)::after {
+  background: #5b6b7a;
+}
+
+.metric-card:nth-child(4) svg {
+  color: #4a5a68;
+  background: #eaeef2;
 }

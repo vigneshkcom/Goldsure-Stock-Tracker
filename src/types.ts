@@ -4,6 +4,8 @@ export type ProductCondition = "good" | "faulty";
 
 export type WarrantyJobStatus = "open" | "posted" | "completed" | "cancelled";
 
+export type WarrantyJobType = "warranty" | "oneoff";
+
 export type MovementType =
   | "opening"
   | "receive"
@@ -65,6 +67,7 @@ export type WarrantyJob = {
   customer_phone: string | null;
   customer_address: string | null;
   status: WarrantyJobStatus;
+  job_type?: WarrantyJobType;
   notes: string | null;
   created_at?: string;
   updated_at?: string;

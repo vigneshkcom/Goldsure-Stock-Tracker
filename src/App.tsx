@@ -53,6 +53,7 @@ import type {
   StockData,
   WarrantyJob,
   WarrantyJobStatus,
+  WarrantyJobType,
 } from "./types";
 
 const LOCAL_STORAGE_KEY = "stock-tracker-data-v1";
@@ -115,8 +116,16 @@ const conditionLabels: Record<ProductCondition, string> = {
 const statusLabels: Record<WarrantyJobStatus, string> = {
   open: "Open",
   posted: "Posted",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  completed: "Replaced",
+  cancelled: "Closed",
+};
+
+// Class suffix used to colour each status chip / select.
+const statusChipClass: Record<WarrantyJobStatus, string> = {
+  open: "status-open",
+  posted: "status-posted",
+  completed: "status-replaced",
+  cancelled: "status-closed",
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -407,6 +416,7 @@ export default function App() {
   const [warrantyCustomerPhone, setWarrantyCustomerPhone] = useState("");
   const [warrantyCustomerAddress, setWarrantyCustomerAddress] = useState("");
   const [warrantyJobNotes, setWarrantyJobNotes] = useState("");
+  const [warrantyJobType, setWarrantyJobType] = useState<WarrantyJobType>("warranty");
   const [warrantyDate, setWarrantyDate] = useState(today());
   const [postProductId, setPostProductId] = useState("");
   const [postWarehouseId, setPostWarehouseId] = useState("");
@@ -763,19 +773,38 @@ export default function App() {
 
   async function saveWarrantyJob(job: WarrantyJob) {
     if (usingRemote && supabase) {
-      const { data: inserted, error: insertError } = await supabase
+      let { data: inserted, error: insertError } = await supabase
         .from("warranty_jobs")
         .insert({ ...job })
         .select("*")
         .single();
+      // Older databases may not have the job_type column yet: retry without it
+      // so job creation still works before the schema migration is run.
+      if (insertError && /job_type/i.test(insertError.message)) {
+        const { job_type: _omit, ...rest } = job;
+        ({ data: inserted, error: insertError } = await supabase
+          .from("warranty_jobs")
+          .insert({ ...rest })
+          .select("*")
+          .single());
+      }
       if (insertError) throw insertError;
-      const saved = inserted as WarrantyJob;
+      const saved = { job_type: job.job_type, ...(inserted as WarrantyJob) } as WarrantyJob;
       setData((current) => normalizeData({ ...current, warrantyJobs: [saved, ...current.warrantyJobs] }));
       return saved;
     }
 
     updateLocal((current) => ({ ...current, warrantyJobs: [job, ...current.warrantyJobs] }));
     return job;
+  }
+
+  async function handleChangeJobStatus(jobId: string, status: WarrantyJobStatus) {
+    setError(null);
+    try {
+      await updateWarrantyJob(jobId, { status });
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : "Could not update the job status.");
+    }
   }
 
   async function updateWarrantyJob(jobId: string, updates: Partial<WarrantyJob>) {
@@ -1700,6 +1729,7 @@ export default function App() {
         customer_phone: warrantyCustomerPhone.trim() || null,
         customer_address: warrantyCustomerAddress.trim() || null,
         status: "open",
+        job_type: warrantyJobType,
         notes: warrantyJobNotes.trim() || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1711,7 +1741,8 @@ export default function App() {
       setWarrantyCustomerPhone("");
       setWarrantyCustomerAddress("");
       setWarrantyJobNotes("");
-      setMessage("Warranty job created.");
+      setWarrantyJobType("warranty");
+      setMessage(`${warrantyJobType === "oneoff" ? "One-off post" : "Warranty"} job created.`);
     } catch (jobError) {
       setError(jobError instanceof Error ? jobError.message : "Could not create warranty job.");
     } finally {
@@ -2085,6 +2116,7 @@ export default function App() {
               goodBalanceMap={goodBalanceMap}
               jobNotes={warrantyJobNotes}
               jobNumber={warrantyJobNumber}
+              jobType={warrantyJobType}
               postProductId={postProductId}
               postQuantity={postQuantity}
               postReference={postReference}
@@ -2110,6 +2142,8 @@ export default function App() {
               setCustomerPhone={setWarrantyCustomerPhone}
               setJobNotes={setWarrantyJobNotes}
               setJobNumber={setWarrantyJobNumber}
+              setJobType={setWarrantyJobType}
+              onChangeJobStatus={handleChangeJobStatus}
               setPostProductId={setPostProductId}
               setPostQuantity={setPostQuantity}
               setPostReference={setPostReference}
@@ -2772,6 +2806,7 @@ function WarrantyView({
   goodBalanceMap,
   jobNotes,
   jobNumber,
+  jobType,
   jobs,
   postProductId,
   postQuantity,
@@ -2786,6 +2821,7 @@ function WarrantyView({
   warrantyDate,
   warehouses,
   onCreateJob,
+  onChangeJobStatus,
   onPostStock,
   onRecordChangeover,
   setChangeNotes,
@@ -2797,6 +2833,7 @@ function WarrantyView({
   setCustomerPhone,
   setJobNotes,
   setJobNumber,
+  setJobType,
   setPostProductId,
   setPostQuantity,
   setPostReference,
@@ -2826,6 +2863,7 @@ function WarrantyView({
   goodBalanceMap: Map<string, number>;
   jobNotes: string;
   jobNumber: string;
+  jobType: WarrantyJobType;
   jobs: WarrantyJob[];
   postProductId: string;
   postQuantity: string;
@@ -2840,6 +2878,7 @@ function WarrantyView({
   warrantyDate: string;
   warehouses: Holder[];
   onCreateJob: (event: FormEvent<HTMLFormElement>) => void;
+  onChangeJobStatus: (jobId: string, status: WarrantyJobStatus) => void;
   onPostStock: (event: FormEvent<HTMLFormElement>) => void;
   onRecordChangeover: (event: FormEvent<HTMLFormElement>) => void;
   setChangeNotes: (value: string) => void;
@@ -2851,6 +2890,7 @@ function WarrantyView({
   setCustomerPhone: (value: string) => void;
   setJobNotes: (value: string) => void;
   setJobNumber: (value: string) => void;
+  setJobType: (value: WarrantyJobType) => void;
   setPostProductId: (value: string) => void;
   setPostQuantity: (value: string) => void;
   setPostReference: (value: string) => void;
@@ -2910,12 +2950,31 @@ function WarrantyView({
         <section className="panel">
           <div className="panel-header">
             <div>
-              <h2>Create Warranty Job</h2>
+              <h2>Create Job</h2>
               <p>{openJobs} open or posted jobs</p>
             </div>
           </div>
 
           <form className="warranty-form" onSubmit={onCreateJob}>
+            <div className="full-width seg-field">
+              <span className="seg-label">Job type</span>
+              <div className="segmented" role="group" aria-label="Job type">
+                <button
+                  type="button"
+                  className={jobType === "warranty" ? "active" : ""}
+                  onClick={() => setJobType("warranty")}
+                >
+                  Warranty
+                </button>
+                <button
+                  type="button"
+                  className={jobType === "oneoff" ? "active" : ""}
+                  onClick={() => setJobType("oneoff")}
+                >
+                  One-Off Post
+                </button>
+              </div>
+            </div>
             <label>
               Job number
               <input value={jobNumber} onChange={(event) => setJobNumber(event.target.value)} required />
@@ -2961,20 +3020,43 @@ function WarrantyView({
               const installed = sumJobMovement(job, data.movements, "install", "good");
               const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
               const isActive = selectedJobId === job.id;
+              const rowType: WarrantyJobType = job.job_type ?? "warranty";
               return (
-                <button
+                <div
                   className={isActive ? "job-row active" : "job-row"}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedJobId(job.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedJobId(job.id);
+                    }
+                  }}
                   key={job.id}
                 >
-                  <span>
+                  <span className="job-head">
                     <strong>{job.job_number}</strong>
                     {job.customer_name}
+                    <em className={`type-chip ${rowType === "oneoff" ? "info" : "neutral"} job-type-tag`}>
+                      {rowType === "oneoff" ? "One-Off" : "Warranty"}
+                    </em>
                   </span>
-                  <span className={`status-chip ${job.status === "completed" ? "ok" : "attention"}`}>
-                    {statusLabels[job.status]}
-                  </span>
+                  <select
+                    className={`job-status-select status-chip ${statusChipClass[job.status]}`}
+                    value={job.status}
+                    aria-label={`Status for job ${job.job_number}`}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation();
+                      onChangeJobStatus(job.id, event.target.value as WarrantyJobStatus);
+                    }}
+                  >
+                    <option value="open">Open</option>
+                    <option value="posted">Posted</option>
+                    <option value="completed">Replaced</option>
+                    <option value="cancelled">Closed</option>
+                  </select>
                   <span className="job-counts">
                     Posted {posted} | Installed {installed} | Faulty {faulty}
                   </span>
@@ -3002,7 +3084,7 @@ function WarrantyView({
                       </div>
                     </div>
                   ) : null}
-                </button>
+                </div>
               );
             })}
           </div>
