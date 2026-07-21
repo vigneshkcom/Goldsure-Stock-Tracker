@@ -5,8 +5,27 @@ import { cartonsForSku, pickupConfig } from "./pickupConfig";
 
 const MARGIN = 40;
 
+// Horizontal Goldsure logo aspect ratio (2401 x 921).
+const LOGO_RATIO = 2401 / 921;
+
 function lastY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+}
+
+// Draw the horizontal logo (or a bold "Goldsure" fallback) at the top-left and
+// return the y coordinate just below it.
+function drawLogoHeader(doc: jsPDF, logo: string | undefined, width = 150): number {
+  if (logo) {
+    const height = width / LOGO_RATIO;
+    doc.addImage(logo, "PNG", MARGIN, MARGIN - 8, width, height, undefined, "FAST");
+    return MARGIN - 8 + height;
+  }
+  doc.setFontSize(22);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(31, 122, 68);
+  doc.text("Goldsure", MARGIN, MARGIN + 8);
+  doc.setTextColor(0, 0, 0);
+  return MARGIN + 16;
 }
 
 function section(doc: jsPDF, title: string, head: string[], rows: string[][], startY: number): number {
@@ -29,18 +48,20 @@ function section(doc: jsPDF, title: string, head: string[], rows: string[][], st
 
 // Build the full stock report as a PDF and return it as a base64 string
 // (no data-URI prefix) suitable for a Resend attachment.
-export function buildReportPdfBase64(input: StockReportInput): string {
+export function buildReportPdfBase64(input: StockReportInput, logo?: string): string {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
 
+  const headerBottom = drawLogoHeader(doc, logo);
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text(`Stock Report - ${input.electricianName}`, MARGIN, MARGIN + 6);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Stock Report - ${input.electricianName}`, MARGIN, headerBottom + 24);
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(90, 90, 90);
-  doc.text(`As of ${input.asOfDate}`, MARGIN, MARGIN + 24);
+  doc.text(`As of ${input.asOfDate}`, MARGIN, headerBottom + 42);
 
-  let y = MARGIN + 50;
+  let y = headerBottom + 68;
   y = section(
     doc,
     "Stock On Hand Now",
@@ -79,25 +100,22 @@ export function buildReportPdfBase64(input: StockReportInput): string {
 
 // The pack request to Specific Freight as a PDF base64 string. Generic: shows
 // the items to pack, the request type and reference, no customer details.
-export function buildPackPdfBase64(input: PackRequestInput): string {
+export function buildPackPdfBase64(input: PackRequestInput, logo?: string): string {
   const { company, freight } = pickupConfig;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
 
-  doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(31, 122, 68);
-  doc.text("Goldsure", MARGIN, MARGIN + 8);
+  const headerBottom = drawLogoHeader(doc, logo);
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
-  doc.text("Stock Pickup Request", MARGIN, MARGIN + 32);
+  doc.text("Stock Pickup Request", MARGIN, headerBottom + 24);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(90, 90, 90);
-  doc.text(`Date of request ${input.requestDate}`, MARGIN, MARGIN + 48);
+  doc.text(`Date of request ${input.requestDate}`, MARGIN, headerBottom + 40);
 
   autoTable(doc, {
-    startY: MARGIN + 66,
+    startY: headerBottom + 56,
     theme: "grid",
     styles: { fontSize: 9, cellPadding: 4, lineColor: [120, 120, 120], lineWidth: 0.5, textColor: 20 },
     margin: { left: MARGIN, right: MARGIN },
@@ -137,16 +155,18 @@ export function buildPackPdfBase64(input: PackRequestInput): string {
 }
 
 // The full Stock Release Request (pickup slip) as a PDF base64 string.
-export function buildPickupPdfBase64(input: PickupSlipInput): string {
+export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): string {
   const { company, freight } = pickupConfig;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const yellow: [number, number, number] = [255, 241, 0];
   const grey: [number, number, number] = [243, 244, 246];
   const gridStyles = { fontSize: 9, cellPadding: 4, lineColor: [120, 120, 120] as [number, number, number], lineWidth: 0.5, textColor: 20 };
 
+  const headerBottom = drawLogoHeader(doc, logo);
+
   // Header info block (title + dates + warehouse).
   autoTable(doc, {
-    startY: MARGIN,
+    startY: headerBottom + 12,
     theme: "grid",
     styles: gridStyles,
     margin: { left: MARGIN, right: MARGIN },

@@ -69,19 +69,36 @@ export function messageToHtml(message: string): string {
   return `<div style="margin-bottom:18px;">${paragraphs}</div>`;
 }
 
-// A plain-text email signature (no logo — data-URI images are blocked by Gmail).
-export function buildSignatureHtml(): string {
-  const { signature } = pickupConfig;
+// Two-column email signature: "Regards," then the vertical logo on the left,
+// a gold divider, and the contact block on the right. The logo must be a hosted
+// absolute URL (Gmail/Outlook block data-URI images).
+export function buildSignatureHtml(logoUrl?: string): string {
+  const { signature, company } = pickupConfig;
+  const gold = "#a97f1e";
+  const logoCell = logoUrl
+    ? `<td style="padding:0 22px 0 0;vertical-align:middle;">
+        <img src="${escapeHtml(logoUrl)}" alt="Goldsure" width="120" style="width:120px;height:auto;display:block;" />
+      </td>`
+    : "";
+  const detailsStyle = logoUrl
+    ? "padding:2px 0 2px 22px;vertical-align:middle;border-left:2px solid #d8c073;"
+    : "padding:2px 0;vertical-align:middle;";
   return `
-  <div style="margin-top:22px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;color:#111111;">
-    <span style="font-size:15px;font-weight:bold;">${escapeHtml(signature.name)}</span><br />
-    <span style="color:#444444;">${escapeHtml(signature.title)}</span><br />
-    <span style="font-weight:bold;color:#1f7a44;">${escapeHtml(signature.company)}</span><br />
-    <br />
-    <strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:#111111;">${escapeHtml(signature.email)}</a><br />
-    <strong>p:</strong> ${escapeHtml(signature.phone)}<br />
-    <strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:#111111;">${escapeHtml(signature.web)}</a>
-  </div>`;
+  <p style="margin:22px 0 10px;font-size:14px;color:#111111;font-family:Arial,Helvetica,sans-serif;">Regards,</p>
+  <table cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">
+    <tr>
+      ${logoCell}
+      <td style="${detailsStyle}">
+        <div style="font-size:15px;font-weight:bold;color:#111111;line-height:1.45;">${escapeHtml(signature.name)}</div>
+        <div style="font-size:12px;color:#555555;line-height:1.45;">${escapeHtml(signature.title)}</div>
+        <div style="font-size:12px;font-weight:bold;color:${gold};letter-spacing:0.04em;line-height:1.55;">${escapeHtml(company.name.toUpperCase())}</div>
+        <div style="height:8px;line-height:8px;font-size:8px;">&nbsp;</div>
+        <div style="font-size:13px;color:#111111;line-height:1.65;"><strong>p:</strong> ${escapeHtml(signature.phone)}</div>
+        <div style="font-size:13px;color:#111111;line-height:1.65;"><strong>e:</strong> <a href="mailto:${escapeHtml(signature.email)}" style="color:${gold};text-decoration:none;">${escapeHtml(signature.email)}</a></div>
+        <div style="font-size:13px;color:#111111;line-height:1.65;"><strong>w:</strong> <a href="https://${escapeHtml(signature.web)}" style="color:${gold};text-decoration:none;">${escapeHtml(signature.web)}</a></div>
+      </td>
+    </tr>
+  </table>`;
 }
 
 export function buildPickupSlipInner(input: PickupSlipInput): string {

@@ -33,7 +33,10 @@ export const pickupConfig = {
     "RH638-B-RF": 48,
     RHRC2: 50,
   } as Record<string, number>,
-  logoPath: "/assets/goldsure-logo.png",
+  // Wide/horizontal logo, embedded (as a data URI) into PDFs and the print
+  // preview. The vertical logo is used for the email signature.
+  logoPath: "/assets/goldsure-logo-horizontal.png",
+  logoVerticalPath: "/assets/goldsure-logo-vertical.png",
 };
 
 export function cartonsForSku(sku: string | null, quantity: number): string {

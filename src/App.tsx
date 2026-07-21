@@ -590,25 +590,32 @@ export default function App() {
     void loadRemoteData();
   }, [localOnly]);
 
-  // Load the logo once and keep it as a data URI so emails and PDFs embed the
-  // image bytes directly instead of linking back to this internal app.
+  // Load the logo once and keep it as a data URI so PDFs and the print preview
+  // embed the image bytes directly. Downscale it to keep the PDF small (jsPDF
+  // stores the full bitmap, so the 2400px source would make an 8 MB+ file).
   useEffect(() => {
     let active = true;
-    fetch(pickupConfig.logoPath)
-      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error("no logo"))))
-      .then(
-        (blob) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(new Error("read failed"));
-            reader.readAsDataURL(blob);
-          }),
-      )
-      .then((uri) => {
-        if (active) setLogoDataUri(uri);
-      })
-      .catch(() => {});
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      const maxWidth = 640;
+      const scale = Math.min(1, maxWidth / image.width);
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.drawImage(image, 0, 0, width, height);
+      try {
+        setLogoDataUri(canvas.toDataURL("image/png"));
+      } catch {
+        /* ignore */
+      }
+    };
+    image.onerror = () => {};
+    image.src = pickupConfig.logoPath;
     return () => {
       active = false;
     };
@@ -1179,7 +1186,7 @@ export default function App() {
     setComposeBodyInner(buildPickupSlipInner({ ...slip.slipInput, withFooter: false }));
     setComposeAttachment({
       filename: attachmentFileName(slip.electrician.name),
-      content: buildPickupPdfBase64(slip.slipInput),
+      content: buildPickupPdfBase64(slip.slipInput, logoDataUri || undefined),
     });
     setComposeTo(slip.to.join(", "));
     setComposeSubject(slip.subject);
@@ -1283,7 +1290,7 @@ export default function App() {
       remaining: report.remaining,
       installedThisWeek: report.installedThisWeek,
     });
-    const pdf = buildReportPdfBase64(report.reportData);
+    const pdf = buildReportPdfBase64(report.reportData, logoDataUri || undefined);
 
     setComposeKind("report");
     setComposeBodyInner(bodyInner);
@@ -1320,7 +1327,10 @@ export default function App() {
 
     setComposeKind("pack");
     setComposeBodyInner(buildPackRequestInner(packInput));
-    setComposeAttachment({ filename: `stock-pickup-request-${requestDate}.pdf`, content: buildPackPdfBase64(packInput) });
+    setComposeAttachment({
+      filename: `stock-pickup-request-${requestDate}.pdf`,
+      content: buildPackPdfBase64(packInput, logoDataUri || undefined),
+    });
     setComposeTo(pickupConfig.freight.to.join(", "));
     setComposeCc(pickupConfig.freight.cc.join(", "));
     setComposeSubject(`Stock pickup request - ${requestDate}${reference ? ` - Reference ${reference}` : ""}`);
@@ -1362,7 +1372,10 @@ export default function App() {
       return;
     }
 
-    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml()}`);
+    // Email clients block data-URI images, so the signature logo must be a
+    // hosted absolute URL (served from this deployed app).
+    const signatureLogoUrl = `${window.location.origin}${pickupConfig.logoVerticalPath}`;
+    const html = wrapDocument(`${messageToHtml(composeMessage)}${composeBodyInner}${buildSignatureHtml(signatureLogoUrl)}`);
 
     setSendingSlip(true);
     setError(null);
@@ -1890,11 +1903,16 @@ export default function App() {
       <aside className="sidebar">
         <header className="topbar">
           <div className="brand">
-            <img className="brand-logo" src="/assets/goldsure-logo.png" alt="" onError={(event) => (event.currentTarget.style.display = "none")} />
-            <div className="brand-copy">
-              <span>Goldsure</span>
-              <strong>Stock tracker</strong>
-            </div>
+            <img
+              className="brand-logo"
+              src="/assets/goldsure-logo-horizontal.png"
+              alt="Goldsure"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = "/assets/goldsure-logo.png";
+              }}
+            />
+            <span className="brand-sub">Stock tracker</span>
           </div>
         </header>
 
