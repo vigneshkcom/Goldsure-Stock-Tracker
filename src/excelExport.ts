@@ -1,4 +1,5 @@
 import ExcelJS, { type Worksheet } from "exceljs";
+import { businessDateValue, businessWallClockDate, dateOnlyDate } from "./dateTime";
 import type { Movement, ProductCondition, StockData, WarrantyJob } from "./types";
 
 const MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -21,8 +22,9 @@ function movementCondition(movement: Movement): ProductCondition {
 
 function dateValue(value: string | null | undefined): Date | string | null {
   if (!value) return null;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return dateOnlyDate(value);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : businessWallClockDate(date);
 }
 
 function calculateBalanceMap(data: StockData, condition: ProductCondition) {
@@ -94,6 +96,7 @@ function addDataSheet(workbook: ExcelJS.Workbook, name: string, columns: ExportC
 
 export function buildStockTrackerWorkbook(data: StockData, exportedAt = new Date()) {
   const workbook = new ExcelJS.Workbook();
+  const displayedExportedAt = businessWallClockDate(exportedAt);
   workbook.creator = "Goldsure Stock Tracker";
   workbook.company = "Goldsure";
   workbook.created = exportedAt;
@@ -131,8 +134,8 @@ export function buildStockTrackerWorkbook(data: StockData, exportedAt = new Date
   overview.getCell("A1").value = "Goldsure Stock Tracker Export";
   overview.getCell("A1").font = { bold: true, size: 18, color: { argb: colours.title } };
   overview.mergeCells("A1:C1");
-  overview.getCell("A2").value = "Exported at";
-  overview.getCell("B2").value = exportedAt;
+  overview.getCell("A2").value = "Exported at (Sydney time)";
+  overview.getCell("B2").value = displayedExportedAt;
   overview.getCell("B2").numFmt = "dd mmm yyyy hh:mm";
   overview.getCell("A4").value = "Dashboard metric";
   overview.getCell("B4").value = "Location";
@@ -335,7 +338,7 @@ export async function downloadStockTrackerExcel(data: StockData) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `Goldsure-Stock-Tracker-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  link.download = `Goldsure-Stock-Tracker-${businessDateValue()}.xlsx`;
   document.body.appendChild(link);
   link.click();
   link.remove();

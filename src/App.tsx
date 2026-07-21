@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { workbookSeed } from "./data/seed";
+import { businessDateValue, businessDottedDate, dateOnlyDate, dateOnlyValue, formatDateOnly } from "./dateTime";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { pickupConfig, cartonsForSku } from "./pickupConfig";
 import {
@@ -128,11 +129,7 @@ const statusChipClass: Record<WarrantyJobStatus, string> = {
   cancelled: "status-closed",
 };
 
-function localDateValue(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-const today = () => localDateValue(new Date());
+const today = () => businessDateValue();
 
 // Placeholder electricians seeded with no real name, e.g. "Electrician - 10".
 const STALE_ELECTRICIAN = /^electrician\s*-\s*\d+$/i;
@@ -211,11 +208,7 @@ function titleCase(value: string) {
 }
 
 function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateOnly(value);
 }
 
 // Products always list in this order, matched by SKU or name.
@@ -246,28 +239,23 @@ function sortWarehouses(holders: Holder[]) {
 
 // The Sunday that ends the week containing the given date.
 function weekEndingSunday(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  const day = date.getDay();
-  if (day !== 0) date.setDate(date.getDate() + (7 - day));
-  return localDateValue(date);
+  const date = dateOnlyDate(value);
+  const day = date.getUTCDay();
+  if (day !== 0) date.setUTCDate(date.getUTCDate() + (7 - day));
+  return dateOnlyValue(date);
 }
 
 function formatWeekEnding(value: string) {
-  return `Week ending ${new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })}`;
+  return `Week ending ${formatDateOnly(value, true)}`;
 }
 
 // Recent week-ending Sundays, newest first, for the installation picker.
 function recentWeekEndings(count: number) {
   const weeks: string[] = [];
-  const date = new Date(`${weekEndingSunday(today())}T00:00:00`);
+  const date = dateOnlyDate(weekEndingSunday(today()));
   for (let i = 0; i < count; i += 1) {
-    weeks.push(localDateValue(date));
-    date.setDate(date.getDate() - 7);
+    weeks.push(dateOnlyValue(date));
+    date.setUTCDate(date.getUTCDate() - 7);
   }
   return weeks;
 }
@@ -1336,8 +1324,7 @@ export default function App() {
       return;
     }
 
-    const now = new Date();
-    const requestDate = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+    const requestDate = businessDottedDate();
     const requestType = packType === "warranty" ? "Warranty" : "One-Off Post";
     const reference = packReference.trim() || (packType === "warranty" && selectedWarrantyJob ? selectedWarrantyJob.job_number : "");
     const packInput = { requestType, reference, requestDate, lines };
