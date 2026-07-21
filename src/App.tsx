@@ -1982,6 +1982,22 @@ export default function App() {
             <span>{tabMeta[activeTab].section}</span>
             <h1>{tabMeta[activeTab].title}</h1>
           </div>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={loading || !hasAnyData}
+            onClick={() => {
+              setError(null);
+              void import("./excelExport")
+                .then(({ downloadStockTrackerExcel }) => downloadStockTrackerExcel(data))
+                .catch((downloadError) => {
+                  setError(downloadError instanceof Error ? downloadError.message : "Could not create the Excel download.");
+                });
+            }}
+          >
+            <Download size={18} />
+            Download Excel
+          </button>
         </header>
 
         <div className="page-content">
