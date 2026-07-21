@@ -1,6 +1,6 @@
 :root {
   color: #171821;
-  background: #f5f6fa;
+  background: #e8ebe6;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -12,7 +12,7 @@
   --panel: #ffffff;
   --line: #e4e7e0;
   --line-strong: #cdd2c6;
-  --soft: #f1f2f7;
+  --soft: #eef1ea;
 --primary: #4b55e7;
 --primary-deep: #343cad;
 --plum: #8d3f87;
@@ -21,7 +21,7 @@
   --red-soft: #fceaf0;
   --blue: #1879a7;
   --blue-soft: #e9f4fa;
-  --canvas: #f5f6fa;
+  --canvas: #e8ebe6;
   --sidebar: #ffffff;
   --accent-soft: #e7f7d8;
   --orchid: #8d3f87;
@@ -144,7 +144,7 @@ button:disabled {
   align-items: center;
   margin: 8px 0 22px;
   padding: 5px;
-  background: #f1f2f7;
+  background: #eef1ea;
   border: 1px solid #e4e7e0;
   border-radius: 10px;
   width: fit-content;
@@ -276,7 +276,7 @@ table {
 
 th {
   color: #5d6070;
-  background: #f7f7fa;
+  background: #f2f5f0;
   font-size: 0.8rem;
   letter-spacing: 0;
   text-align: left;
@@ -427,7 +427,7 @@ td span {
 .secondary-button:hover,
 .icon-text-button:hover,
 .ghost-button:hover {
-  background: #fafafd;
+  background: #f6f9f4;
 }
 
 .ghost-button {
@@ -512,7 +512,7 @@ textarea:focus {
   align-self: end;
   min-height: 42px;
   padding: 4px;
-  background: #f1f2f7;
+  background: #eef1ea;
   border: 1px solid #e4e7e0;
   border-radius: 10px;
 }
@@ -577,7 +577,7 @@ textarea:focus {
   gap: 10px;
   min-height: 44px;
   padding: 9px 11px;
-  background: #fafafd;
+  background: #f6f9f4;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -694,7 +694,7 @@ textarea:focus {
   min-height: 72px;
   padding: 12px;
   text-align: left;
-  background: #fafafd;
+  background: #f6f9f4;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -755,7 +755,7 @@ textarea:focus {
 .availability-note {
   min-height: 64px;
   padding: 12px;
-  background: #fafafd;
+  background: #f6f9f4;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -875,7 +875,7 @@ textarea:focus {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: #fafafd;
+  background: #f6f9f4;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -983,7 +983,7 @@ a.tracking-chip {
   align-items: center;
   gap: 12px;
   padding: 9px 11px;
-  background: #fafafd;
+  background: #f6f9f4;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -1361,7 +1361,7 @@ body {
 
 .tabs button:hover {
   color: var(--ink);
-  background: #f6f6fa;
+  background: #f1f4ee;
 }
 
 .tabs button.active {
@@ -1584,7 +1584,7 @@ table {
 
 th {
   color: #5d6070;
-  background: #f7f7fa;
+  background: #f2f5f0;
   font-size: 0.72rem;
   font-weight: 760;
 }
@@ -1605,7 +1605,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: #fafafd;
+  background: #f6f9f4;
 }
 
 tbody tr:last-child td {
@@ -1840,7 +1840,7 @@ textarea:focus {
 .qty-row,
 .job-detail div,
 .availability-note {
-  background: #fafafd;
+  background: #f6f9f4;
   border-color: var(--line);
   border-radius: 8px;
 }
@@ -1879,7 +1879,7 @@ textarea:focus {
 
 .movement-preview {
   padding: 14px 15px;
-  background: #f7f7fa;
+  background: #f2f5f0;
   border-color: var(--line);
   border-radius: 8px;
 }
