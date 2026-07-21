@@ -14,7 +14,6 @@ import {
   PackagePlus,
   Pencil,
   Plus,
-  Printer,
   RefreshCw,
   Search,
   Send,
@@ -32,7 +31,6 @@ import { supabase, supabaseConfigured } from "./lib/supabase";
 import { pickupConfig, cartonsForSku } from "./pickupConfig";
 import {
   buildPackRequestInner,
-  buildPickupSlipHtml,
   buildPickupSlipInner,
   buildReportEmailBodyInner,
   buildSignatureHtml,
@@ -1312,6 +1310,19 @@ export default function App() {
     setComposeOpen(true);
   }
 
+  function downloadStockReport() {
+    setError(null);
+    const report = buildReportForSelected();
+    if (!report) {
+      setError("Select an electrician first.");
+      return;
+    }
+    downloadBase64Pdf(
+      attachmentFileName(report.electrician.name),
+      buildReportPdfBase64(report.reportData, logoDataUri || undefined),
+    );
+  }
+
   // Warranty: ask Specific Freight to pack items for a customer post.
   function openComposePackRequest() {
     setError(null);
@@ -1344,22 +1355,17 @@ export default function App() {
     setComposeOpen(true);
   }
 
-  function handlePrintPickupSlip() {
+  function handleDownloadPickupSlip() {
     setError(null);
     const slip = buildSlipForSelected();
     if (!slip) {
       setError("Enter a quantity for at least one product first.");
       return;
     }
-    const preview = window.open("", "_blank", "width=900,height=760");
-    if (!preview) {
-      setError("Allow pop-ups for this site to preview or print the slip.");
-      return;
-    }
-    preview.document.write(wrapDocument(buildPickupSlipInner({ ...slip.slipInput, logoUrl: logoDataUri, withFooter: true })));
-    preview.document.close();
-    preview.focus();
-    setTimeout(() => preview.print(), 300);
+    downloadBase64Pdf(
+      attachmentFileName(slip.electrician.name),
+      buildPickupPdfBase64(slip.slipInput, logoDataUri || undefined),
+    );
   }
 
   // Send whatever is in the compose modal (pickup slip or stock report).
@@ -2133,9 +2139,10 @@ export default function App() {
               onRecordLoss={handleRecordLoss}
               onToggleLossCharged={toggleLossCharged}
               onDeleteMovement={deleteMovement}
-              onPrintPickupSlip={handlePrintPickupSlip}
+              onDownloadPickupSlip={handleDownloadPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
               onEmailReport={openComposeStockReport}
+              onDownloadReport={downloadStockReport}
             />
           ) : null}
 
@@ -3503,9 +3510,10 @@ function ElectriciansView({
   onRecordLoss,
   onToggleLossCharged,
   onDeleteMovement,
-  onPrintPickupSlip,
+  onDownloadPickupSlip,
   onSendPickupSlip,
   onEmailReport,
+  onDownloadReport,
 }: {
   technicians: Holder[];
   warehouses: Holder[];
@@ -3554,9 +3562,10 @@ function ElectriciansView({
   onRecordLoss: (event: FormEvent<HTMLFormElement>) => void;
   onToggleLossCharged: (movement: Movement) => void;
   onDeleteMovement: (movementId: string) => void;
-  onPrintPickupSlip: () => void;
+  onDownloadPickupSlip: () => void;
   onSendPickupSlip: () => void;
   onEmailReport: () => void;
+  onDownloadReport: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
@@ -3714,9 +3723,9 @@ function ElectriciansView({
                       <Send size={17} />
                       Email report
                     </button>
-                    <button className="secondary-button" type="button" onClick={() => window.print()}>
-                      <Printer size={18} />
-                      Print report
+                    <button className="secondary-button" type="button" onClick={onDownloadReport}>
+                      <Download size={18} />
+                      Download PDF
                     </button>
                   </div>
                 </div>
@@ -3933,9 +3942,9 @@ function ElectriciansView({
                     />
                   </label>
                   <div className="form-actions">
-                    <button className="secondary-button" type="button" onClick={onPrintPickupSlip} disabled={sendingSlip}>
-                      <Printer size={18} />
-                      Preview / print
+                    <button className="secondary-button" type="button" onClick={onDownloadPickupSlip} disabled={sendingSlip}>
+                      <Download size={18} />
+                      Download PDF
                     </button>
                     <button className="primary-button" type="button" onClick={onSendPickupSlip} disabled={sendingSlip}>
                       <Truck size={18} />
