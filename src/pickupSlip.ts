@@ -34,6 +34,14 @@ export function formatSlipDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
+// Product names in the tracker often already end with their SKU. Only append
+// the SKU when it is not already present so PDF/email line items show it once.
+export function productDescription(productName: string, sku: string | null): string {
+  const code = sku?.trim();
+  if (!code || productName.toLocaleUpperCase().includes(code.toLocaleUpperCase())) return productName;
+  return `${productName}\n${code}`;
+}
+
 // Wrap inner HTML in a full document. A centered fixed-width table keeps the
 // layout from stretching edge-to-edge in Outlook (which ignores max-width).
 export function wrapDocument(innerHtml: string): string {
@@ -110,6 +118,7 @@ export function buildPickupSlipInner(input: PickupSlipInput): string {
 
   const productRows = input.lines
     .map((line, index) => {
+      const description = escapeHtml(productDescription(line.productName, line.sku)).replace(/\n/g, "<br/>");
       const recipientCells =
         index === 0
           ? `
@@ -119,7 +128,7 @@ export function buildPickupSlipInner(input: PickupSlipInput): string {
           : "";
       return `
       <tr>
-        <td style="${cell}"><strong>${escapeHtml(line.productName)}</strong>${line.sku ? `<br/>${escapeHtml(line.sku)}` : ""}</td>
+        <td style="${cell}"><strong>${description}</strong></td>
         <td style="${cell};text-align:center;">${line.quantity.toLocaleString()}</td>
         <td style="${cell};text-align:center;">${cartonsForSku(line.sku, line.quantity) || "&mdash;"}</td>
         <td style="${cell};text-align:center;">${escapeHtml(line.mode)}</td>
@@ -212,8 +221,10 @@ export type PackRequestInput = {
 export function buildPackRequestInner(input: PackRequestInput): string {
   const rows = input.lines
     .map(
-      (line) =>
-        `<tr><td style="${cell}"><strong>${escapeHtml(line.product)}</strong>${line.sku ? `<br/>${escapeHtml(line.sku)}` : ""}</td><td style="${cell};text-align:center;">${line.quantity.toLocaleString()}</td></tr>`,
+      (line) => {
+        const description = escapeHtml(productDescription(line.product, line.sku)).replace(/\n/g, "<br/>");
+        return `<tr><td style="${cell}"><strong>${description}</strong></td><td style="${cell};text-align:center;">${line.quantity.toLocaleString()}</td></tr>`;
+      },
     )
     .join("");
 
@@ -343,5 +354,5 @@ export function buildStockReportInner(input: StockReportInput): string {
     }`;
 }
 
-const cell = "border:1px solid #333;padding:6px 8px;";
+const cell = "border:1px solid #333;padding:6px 8px;vertical-align:middle;";
 const head = "border:1px solid #333;padding:6px 8px;text-align:center;font-weight:bold;background:#f3f4f6;";

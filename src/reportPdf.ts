@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
-import type { PackRequestInput, PickupSlipInput, StockReportInput } from "./pickupSlip";
+import { productDescription, type PackRequestInput, type PickupSlipInput, type StockReportInput } from "./pickupSlip";
 import { cartonsForSku, pickupConfig } from "./pickupConfig";
 
 const MARGIN = 40;
@@ -135,7 +135,7 @@ export function buildPackPdfBase64(input: PackRequestInput, logo?: string): stri
     margin: { left: MARGIN, right: MARGIN },
     head: [["Product to pack", "Quantity"]],
     body: input.lines.map((line) => [
-      `${line.product}${line.sku ? `\n${line.sku}` : ""}`,
+      productDescription(line.product, line.sku),
       { content: String(line.quantity), styles: { halign: "center" } },
     ]) as RowInput[],
   });
@@ -160,7 +160,14 @@ export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): str
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const yellow: [number, number, number] = [255, 241, 0];
   const grey: [number, number, number] = [243, 244, 246];
-  const gridStyles = { fontSize: 9, cellPadding: 4, lineColor: [120, 120, 120] as [number, number, number], lineWidth: 0.5, textColor: 20 };
+  const gridStyles = {
+    fontSize: 9,
+    cellPadding: 4,
+    lineColor: [120, 120, 120] as [number, number, number],
+    lineWidth: 0.5,
+    textColor: 20,
+    valign: "middle" as const,
+  };
 
   const headerBottom = drawLogoHeader(doc, logo);
 
@@ -182,7 +189,7 @@ export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): str
   // Product table with merged recipient columns.
   const productBody: RowInput[] = input.lines.map((line, index) => {
     const row: RowInput = [
-      `${line.productName}${line.sku ? `\n${line.sku}` : ""}`,
+      productDescription(line.productName, line.sku),
       { content: String(line.quantity), styles: { halign: "center" } },
       { content: cartonsForSku(line.sku, line.quantity) || "-", styles: { halign: "center" } },
       { content: line.mode, styles: { halign: "center" } },
