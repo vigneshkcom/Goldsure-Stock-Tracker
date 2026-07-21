@@ -3541,12 +3541,7 @@ function ElectriciansView({
       .filter((movement) => (direction === "in" ? movement.to_holder_id === electrician?.id : movement.from_holder_id === electrician?.id))
       .reduce((total, movement) => total + movement.quantity, 0);
 
-  const totalGiven = sumByType("issue", "good", "in");
-  const totalInstalled = sumByType("install", "good", "out");
   const totalReturned = sumByType("return", "good", "out");
-  const totalFaulty = electrician
-    ? activeProducts.reduce((total, product) => total + getBalance(faultyBalanceMap, electrician.id, product.id), 0)
-    : 0;
   const totalOnHand = electrician
     ? activeProducts.reduce((total, product) => total + getBalance(goodBalanceMap, electrician.id, product.id), 0)
     : 0;
@@ -3639,21 +3634,15 @@ function ElectriciansView({
                   <span>On Hand (good)</span>
                   <strong>{totalOnHand.toLocaleString()}</strong>
                 </div>
-                <div className="metric-card">
-                  <Truck size={22} />
-                  <span>Given</span>
-                  <strong>{totalGiven.toLocaleString()}</strong>
-                </div>
-                <div className="metric-card">
-                  <PackageCheck size={22} />
-                  <span>Installed</span>
-                  <strong>{totalInstalled.toLocaleString()}</strong>
-                </div>
-                <div className="metric-card">
-                  <AlertTriangle size={22} />
-                  <span>Faulty Held</span>
-                  <strong>{totalFaulty.toLocaleString()}</strong>
-                </div>
+                {activeProducts.map((product) => (
+                  <div className="metric-card" key={product.id}>
+                    <PackageCheck size={22} />
+                    <span>{product.sku ?? product.name}</span>
+                    <strong>
+                      {(electrician ? getBalance(goodBalanceMap, electrician.id, product.id) : 0).toLocaleString()}
+                    </strong>
+                  </div>
+                ))}
               </div>
 
               <section className="panel">

@@ -2272,8 +2272,9 @@ textarea:focus {
   --muted: #5f6a60;
   --blue: #2f6f9c;
   --blue-soft: #e6f1f8;
-  --plum: #6b5bd0;
-  --plum-soft: #eeecfa;
+  --plum: #227d6a;
+  --plum-soft: #e2f2ee;
+  --orchid: #227d6a;
   --shadow: 0 12px 32px rgba(20, 30, 20, 0.06);
   --shadow-strong: 0 22px 56px rgba(20, 30, 20, 0.12);
 }
@@ -2443,21 +2444,38 @@ body {
   border-color: var(--line-strong);
 }
 
-/* Metric-card accents: cohesive green / blue / teal / slate (no purple or pink). */
-.metric-card:nth-child(3)::after {
-  background: #2f8f86;
-}
-
-.metric-card:nth-child(3) svg {
-  color: #227a72;
-  background: #e2f1ef;
-}
-
+/* Metric-card accents: one cohesive Wise green across every card.
+   No blue, teal, slate, purple or pink. */
+.metric-card::after,
+.metric-card:nth-child(2)::after,
+.metric-card:nth-child(3)::after,
 .metric-card:nth-child(4)::after {
-  background: #5b6b7a;
+  background: var(--primary-deep);
 }
 
+.metric-card svg,
+.metric-card:nth-child(2) svg,
+.metric-card:nth-child(3) svg,
 .metric-card:nth-child(4) svg {
-  color: #4a5a68;
-  background: #eaeef2;
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+}
+
+/* Focus rings and attention chips: Wise green / teal, never indigo or purple. */
+input:focus,
+select:focus,
+textarea:focus,
+.search-box:focus-within {
+  border-color: var(--primary-deep);
+  box-shadow: 0 0 0 3px rgba(31, 122, 68, 0.16);
+}
+
+:focus-visible {
+  outline-color: rgba(31, 122, 68, 0.34);
+}
+
+.status-chip.attention,
+.type-chip.warning {
+  color: #1b6656;
+  background: #e2f2ee;
 }
