@@ -2479,3 +2479,30 @@ textarea:focus,
   color: #1b6656;
   background: #e2f2ee;
 }
+
+/* Scrollbars: sage green-grey to match the theme (was a lavender #c9ccda). */
+html {
+  scrollbar-color: #aebfa4 transparent;
+  scrollbar-width: thin;
+}
+
+.responsive-table,
+.job-list,
+.ledger-list {
+  scrollbar-color: #aebfa4 transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #aebfa4;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
