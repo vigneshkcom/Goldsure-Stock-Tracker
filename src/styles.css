@@ -2811,9 +2811,14 @@ html {
   margin-left: auto;
 }
 
-/* Two-column warranty layout: ~33% form / ~67% list. */
+/* Two-column warranty layout: ~33% form / ~67% list. Stretch both panels to
+   the same height so they begin and end at the same vertical position. */
 .warranty-grid {
   grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
+  align-items: stretch;
+}
+.warranty-grid > .panel {
+  height: 100%;
 }
 
 /* Summary cards: icon-left square, label + count beside, bottom-left accent. */
