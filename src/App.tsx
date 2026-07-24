@@ -3389,66 +3389,6 @@ function WarrantyView({
         </section>
       </section>
 
-      <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Request Pack from Specific Freight</h2>
-              <p>
-                Emails Specific Freight (Damien Doyle, CC {pickupConfig.freight.cc.join(", ")}) to pack stock for posting to a
-                customer and send dimensions. Opens a preview you can edit, with a PDF download. Does not move stock.
-              </p>
-            </div>
-          </div>
-          <div className="stack-form">
-            <div className="warranty-form">
-              <label>
-                Request type
-                <select value={packType} onChange={(event) => setPackType(event.target.value as "warranty" | "oneoff")}>
-                  <option value="warranty">Warranty</option>
-                  <option value="oneoff">One-Off Post</option>
-                </select>
-              </label>
-              <label>
-                Reference
-                <input
-                  value={packReference}
-                  onChange={(event) => setPackReference(event.target.value)}
-                  placeholder={selectedJob ? `${selectedJob.job_number} (job)` : "Customer reference number"}
-                />
-              </label>
-            </div>
-            <div className="qty-list">
-              {activeProducts.map((product) => {
-                const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
-                return (
-                  <div className="qty-row" key={product.id}>
-                    <div className="qty-name">
-                      <strong>{product.name}</strong>
-                      <span>
-                        {freight ? `${getBalance(goodBalanceMap, freight.id, product.id).toLocaleString()} at Specific Freight` : " "}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="0"
-                      value={packQty[product.id] ?? ""}
-                      onChange={(event) => setPackQty({ ...packQty, [product.id]: event.target.value })}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="form-actions">
-              <button className="primary-button" type="button" onClick={onRequestPack}>
-                <Truck size={18} />
-                Review pack request
-              </button>
-            </div>
-          </div>
-        </section>
-
       {selectedJob ? (
         <section className="warranty-grid">
           <section className="panel">
@@ -3577,6 +3517,66 @@ function WarrantyView({
           <p className="muted">Create a job on the left, then select it from the list above.</p>
         </section>
       )}
+
+      <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Request Pack from Specific Freight</h2>
+              <p>
+                Emails Specific Freight (Damien Doyle, CC {pickupConfig.freight.cc.join(", ")}) to pack stock for posting to a
+                customer and send dimensions. Opens a preview you can edit, with a PDF download. Does not move stock.
+              </p>
+            </div>
+          </div>
+          <div className="stack-form">
+            <div className="warranty-form">
+              <label>
+                Request type
+                <select value={packType} onChange={(event) => setPackType(event.target.value as "warranty" | "oneoff")}>
+                  <option value="warranty">Warranty</option>
+                  <option value="oneoff">One-Off Post</option>
+                </select>
+              </label>
+              <label>
+                Reference
+                <input
+                  value={packReference}
+                  onChange={(event) => setPackReference(event.target.value)}
+                  placeholder={selectedJob ? `${selectedJob.job_number} (job)` : "Customer reference number"}
+                />
+              </label>
+            </div>
+            <div className="qty-list">
+              {activeProducts.map((product) => {
+                const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+                return (
+                  <div className="qty-row" key={product.id}>
+                    <div className="qty-name">
+                      <strong>{product.name}</strong>
+                      <span>
+                        {freight ? `${getBalance(goodBalanceMap, freight.id, product.id).toLocaleString()} at Specific Freight` : " "}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={packQty[product.id] ?? ""}
+                      onChange={(event) => setPackQty({ ...packQty, [product.id]: event.target.value })}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="form-actions">
+              <button className="primary-button" type="button" onClick={onRequestPack}>
+                <Truck size={18} />
+                Review pack request
+              </button>
+            </div>
+          </div>
+        </section>
     </section>
   );
 }
