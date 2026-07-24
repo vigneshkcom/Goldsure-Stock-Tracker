@@ -2788,3 +2788,289 @@ html {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ===== Warranty page redesign: compact cards, table job list, pagination ===== */
+
+/* Panel-header leading icon square. */
+.head-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+.panel-header:has(.head-ic) {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.panel-header:has(.head-ic) .ledger-tools {
+  margin-left: auto;
+}
+
+/* Two-column warranty layout: ~33% form / ~67% list. */
+.warranty-grid {
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
+}
+
+/* Summary cards: icon-left square, label + count beside, bottom-left accent. */
+.warranty-metrics {
+  gap: 14px;
+}
+.warranty-metrics .metric-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 0;
+  padding: 16px 18px;
+  overflow: hidden;
+}
+.warranty-metrics .metric-card::after {
+  display: none;
+}
+.warranty-metrics .metric-card::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  bottom: 0;
+  width: 38px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--primary-deep);
+}
+.warranty-metrics .metric-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  color: var(--primary-deep);
+  background: var(--accent-soft);
+  border-radius: 11px;
+}
+.warranty-metrics .metric-ic svg {
+  color: inherit;
+}
+.warranty-metrics .metric-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.warranty-metrics .metric-body small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 640;
+}
+.warranty-metrics .metric-body strong {
+  font-size: 1.7rem;
+  line-height: 1.05;
+  color: var(--ink);
+  font-weight: 820;
+}
+
+/* Selection bar above the table. */
+.jobs-selectbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Table-style job list. */
+.jobs-table {
+  --jobs-cols: 28px 62px minmax(90px, 1fr) max-content 116px;
+  display: block;
+  min-width: 560px;
+}
+.select-all {
+  white-space: nowrap;
+}
+.jobs-head,
+.jobs-row {
+  display: grid;
+  grid-template-columns: var(--jobs-cols);
+  gap: 12px;
+  align-items: center;
+}
+.jobs-head {
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.jobs-head span {
+  color: #5d6070;
+  font-size: 0.72rem;
+  font-weight: 740;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.jobs-row {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.jobs-row:hover {
+  background: #f5f8f2;
+}
+.jobs-row:focus-visible {
+  outline: none;
+  background: #f2f7ee;
+}
+.jobs-row.active {
+  background: #f2f7ee;
+  border-left-color: var(--primary-deep);
+}
+.jobs-row.active.card-posted {
+  border-left-color: #2f6f9c;
+}
+.jobs-row.picked {
+  background: #eef7e5;
+}
+.jobs-rowgroup:last-child .jobs-row {
+  border-bottom: 0;
+}
+
+.jr-job strong {
+  font-weight: 820;
+  color: var(--ink);
+}
+.jr-cust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.jr-name {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jr-sum {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.jr-sum i {
+  margin: 0 3px;
+  color: var(--line-strong);
+  font-style: normal;
+}
+.jr-status {
+  justify-self: end;
+  width: 100%;
+}
+.jr-status .job-status-select {
+  width: 100%;
+  min-width: 108px;
+}
+
+/* Expanded detail beneath a table row. */
+.jobs-expand {
+  padding: 14px 18px 18px;
+  margin-top: 0;
+  background: #fafbf8;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Type badges: subtle purple (warranty) / blue (one-off). */
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 760;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.type-badge.warranty {
+  color: #6b4fa0;
+  background: #efeafa;
+}
+.type-badge.oneoff {
+  color: #1c5d84;
+  background: #e6f1f8;
+}
+
+/* Pagination. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+}
+.pager-info {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.pager-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pager-num {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #454745;
+  font-size: 0.84rem;
+  font-weight: 720;
+}
+.pager-num:hover {
+  border-color: #bfe6a3;
+}
+.pager-num.active {
+  color: #ffffff;
+  background: var(--primary-deep);
+  border-color: var(--primary-deep);
+}
+.ghost-button.sm,
+.danger-button.sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+.ghost-button.sm {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #454745;
+  font-weight: 700;
+}
+.ghost-button.sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.jobs-empty {
+  padding: 22px 18px;
+  text-align: center;
+}
+
+@media (max-width: 1000px) {
+  .warranty-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .warranty-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

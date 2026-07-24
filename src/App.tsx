@@ -5,6 +5,8 @@ import {
   Check,
   CheckCircle2,
   ClipboardList,
+  ClipboardPlus,
+  ListChecks,
   Cloud,
   Database,
   Download,
@@ -3020,6 +3022,8 @@ function WarrantyView({
 }) {
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState("");
+  const [jobsPage, setJobsPage] = useState(1);
+  const JOBS_PER_PAGE = 5;
   const term = searchTerm.trim().toLowerCase();
   const filteredJobs = jobs.filter((job) =>
     [job.job_number, job.customer_name, job.customer_phone, job.customer_address, job.status]
@@ -3031,82 +3035,119 @@ function WarrantyView({
   const filteredJobIds = filteredJobs.map((job) => job.id);
   const allJobsSelected = filteredJobIds.length > 0 && filteredJobIds.every((id) => selectedJobIds.includes(id));
 
+  const pageCount = Math.max(1, Math.ceil(filteredJobs.length / JOBS_PER_PAGE));
+  const currentPage = Math.min(jobsPage, pageCount);
+  const pageJobs = filteredJobs.slice((currentPage - 1) * JOBS_PER_PAGE, currentPage * JOBS_PER_PAGE);
+  const firstShown = filteredJobs.length ? (currentPage - 1) * JOBS_PER_PAGE + 1 : 0;
+  const lastShown = Math.min(currentPage * JOBS_PER_PAGE, filteredJobs.length);
+
   const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
   const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
   const faultyTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "faulty_collect", "faulty"), 0);
 
   return (
     <section className="warranty-stack">
-      <div className="metric-grid">
+      <div className="metric-grid warranty-metrics">
         <div className="metric-card">
-          <ClipboardList size={22} />
-          <span>Warranty Jobs</span>
-          <strong>{jobs.length}</strong>
+          <span className="metric-ic">
+            <ClipboardList size={20} />
+          </span>
+          <span className="metric-body">
+            <small>Warranty Jobs</small>
+            <strong>{jobs.length.toLocaleString()}</strong>
+          </span>
         </div>
         <div className="metric-card">
-          <Truck size={22} />
-          <span>Posted</span>
-          <strong>{postedTotal.toLocaleString()}</strong>
+          <span className="metric-ic">
+            <Truck size={20} />
+          </span>
+          <span className="metric-body">
+            <small>Posted</small>
+            <strong>{postedTotal.toLocaleString()}</strong>
+          </span>
         </div>
         <div className="metric-card">
-          <PackageCheck size={22} />
-          <span>Installed</span>
-          <strong>{installedTotal.toLocaleString()}</strong>
+          <span className="metric-ic">
+            <PackageCheck size={20} />
+          </span>
+          <span className="metric-body">
+            <small>Installed</small>
+            <strong>{installedTotal.toLocaleString()}</strong>
+          </span>
         </div>
         <div className="metric-card">
-          <AlertTriangle size={22} />
-          <span>Faulty Held</span>
-          <strong>{faultyTotal.toLocaleString()}</strong>
+          <span className="metric-ic">
+            <AlertTriangle size={20} />
+          </span>
+          <span className="metric-body">
+            <small>Faulty Held</small>
+            <strong>{faultyTotal.toLocaleString()}</strong>
+          </span>
         </div>
       </div>
 
       <section className="warranty-grid">
         <section className="panel">
           <div className="panel-header">
+            <span className="head-ic">
+              <ClipboardPlus size={20} />
+            </span>
             <div>
               <h2>Create Job</h2>
+              <p>Add a new warranty or one-off post job.</p>
             </div>
           </div>
 
           <form className="warranty-form" onSubmit={onCreateJob}>
-            <div className="full-width seg-field">
-              <span className="seg-label">Job type</span>
-              <div className="segmented" role="group" aria-label="Job type">
-                <button
-                  type="button"
-                  className={jobType === "warranty" ? "active" : ""}
-                  onClick={() => setJobType("warranty")}
-                >
-                  Warranty
-                </button>
-                <button
-                  type="button"
-                  className={jobType === "oneoff" ? "active" : ""}
-                  onClick={() => setJobType("oneoff")}
-                >
-                  One-Off Post
-                </button>
-              </div>
-            </div>
+            <label>
+              Type
+              <select value={jobType} onChange={(event) => setJobType(event.target.value as WarrantyJobType)}>
+                <option value="warranty">Warranty</option>
+                <option value="oneoff">One-Off Post</option>
+              </select>
+            </label>
             <label>
               Job number
-              <input value={jobNumber} onChange={(event) => setJobNumber(event.target.value)} required />
+              <input
+                value={jobNumber}
+                onChange={(event) => setJobNumber(event.target.value)}
+                placeholder="Enter job number"
+                required
+              />
             </label>
             <label>
               Customer
-              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required />
+              <input
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                placeholder="Enter customer name"
+                required
+              />
             </label>
             <label>
               Phone
-              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+              <input
+                value={customerPhone}
+                onChange={(event) => setCustomerPhone(event.target.value)}
+                placeholder="Enter phone number"
+              />
             </label>
             <label className="full-width">
               Address
-              <input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
+              <input
+                value={customerAddress}
+                onChange={(event) => setCustomerAddress(event.target.value)}
+                placeholder="Enter full address"
+              />
             </label>
             <label className="full-width">
               Notes
-              <textarea value={jobNotes} onChange={(event) => setJobNotes(event.target.value)} rows={3} />
+              <textarea
+                value={jobNotes}
+                onChange={(event) => setJobNotes(event.target.value)}
+                rows={2}
+                placeholder="Add notes (optional)"
+              />
             </label>
             <button className="primary-button full-width" type="submit" disabled={submitting}>
               <Plus size={18} />
@@ -3117,9 +3158,14 @@ function WarrantyView({
 
         <section className="panel">
           <div className="panel-header ledger-header">
+            <span className="head-ic">
+              <ListChecks size={20} />
+            </span>
             <div>
               <h2>Job List</h2>
-              <p>{filteredJobs.length} visible jobs</p>
+              <p>
+                {filteredJobs.length} visible job{filteredJobs.length === 1 ? "" : "s"}
+              </p>
             </div>
             <div className="ledger-tools">
               <label className="search-box">
@@ -3133,17 +3179,17 @@ function WarrantyView({
             </div>
           </div>
 
-          <div className="job-bulkbar">
+          <div className="jobs-selectbar">
             <label className="select-all">
               <input
                 type="checkbox"
                 checked={allJobsSelected}
                 onChange={(event) => onSelectAllJobs(filteredJobIds, event.target.checked)}
               />
-              {allJobsSelected ? "Clear" : "Select all"}
+              Select all
             </label>
             {selectedJobIds.length > 0 ? (
-              <button className="danger-button" type="button" onClick={() => onDeleteJobs(selectedJobIds)}>
+              <button className="danger-button sm" type="button" onClick={() => onDeleteJobs(selectedJobIds)}>
                 <Trash2 size={15} />
                 Delete {selectedJobIds.length} selected
               </button>
@@ -3152,58 +3198,76 @@ function WarrantyView({
             )}
           </div>
 
-          <div className="job-list">
-            {filteredJobs.map((job) => {
-              const posted = sumJobMovement(job, data.movements, "customer_post", "good");
-              const installed = sumJobMovement(job, data.movements, "install", "good");
-              const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
-              const isActive = selectedJobId === job.id;
-              const rowType: WarrantyJobType = job.job_type ?? "warranty";
-              const isPicked = selectedJobIds.includes(job.id);
-              return (
-                <div
-                  className={`job-row ${statusCardClass[job.status]}${isActive ? " active" : ""}${isPicked ? " picked" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedJobId(job.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedJobId(job.id);
-                    }
-                  }}
-                  key={job.id}
-                >
-                  <span className="job-head">
-                    <label className="pick" onClick={(event) => event.stopPropagation()}>
-                      <input type="checkbox" checked={isPicked} onChange={() => onToggleJobSelect(job.id)} />
-                    </label>
-                    <strong>{job.job_number}</strong>
-                    {job.customer_name}
-                    <em className={`type-chip ${rowType === "oneoff" ? "info" : "neutral"} job-type-tag`}>
-                      {rowType === "oneoff" ? "One-Off" : "Warranty"}
-                    </em>
-                  </span>
-                  <select
-                    className={`job-status-select status-chip ${statusChipClass[job.status]}`}
-                    value={job.status}
-                    aria-label={`Status for job ${job.job_number}`}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      onChangeJobStatus(job.id, event.target.value as WarrantyJobStatus);
-                    }}
-                  >
-                    <option value="open">Open</option>
-                    <option value="posted">Posted</option>
-                    <option value="completed">Replaced</option>
-                    <option value="cancelled">Closed</option>
-                  </select>
-                  <span className="job-counts">
-                    Posted {posted} | Installed {installed} | Faulty {faulty}
-                  </span>
-                  {isActive ? (
-                    <div className="job-expand" onClick={(event) => event.stopPropagation()}>
+          <div className="responsive-table">
+            <div className="jobs-table" role="table" aria-label="Warranty jobs">
+              <div className="jobs-head" role="row">
+                <span aria-hidden="true" />
+                <span role="columnheader">Job</span>
+                <span role="columnheader">Customer / Type</span>
+                <span role="columnheader">Summary</span>
+                <span role="columnheader">Status</span>
+              </div>
+              {pageJobs.map((job) => {
+                const posted = sumJobMovement(job, data.movements, "customer_post", "good");
+                const installed = sumJobMovement(job, data.movements, "install", "good");
+                const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
+                const isActive = selectedJobId === job.id;
+                const rowType: WarrantyJobType = job.job_type ?? "warranty";
+                const isPicked = selectedJobIds.includes(job.id);
+                return (
+                  <div className="jobs-rowgroup" key={job.id}>
+                    <div
+                      className={`jobs-row ${statusCardClass[job.status]}${isActive ? " active" : ""}${isPicked ? " picked" : ""}`}
+                      role="row"
+                      tabIndex={0}
+                      onClick={() => setSelectedJobId(isActive ? "" : job.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedJobId(isActive ? "" : job.id);
+                        }
+                      }}
+                    >
+                      <label className="pick" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isPicked}
+                          onChange={() => onToggleJobSelect(job.id)}
+                          aria-label={`Select job ${job.job_number}`}
+                        />
+                      </label>
+                      <span className="jr-job">
+                        <strong>{job.job_number}</strong>
+                      </span>
+                      <span className="jr-cust">
+                        <span className="jr-name">{job.customer_name}</span>
+                        <em className={`type-badge ${rowType === "oneoff" ? "oneoff" : "warranty"}`}>
+                          {rowType === "oneoff" ? "One-Off" : "Warranty"}
+                        </em>
+                      </span>
+                      <span className="jr-sum">
+                        Posted {posted} <i>|</i> Installed {installed} <i>|</i> Faulty {faulty}
+                      </span>
+                      <span className="jr-status">
+                        <select
+                          className={`job-status-select status-chip ${statusChipClass[job.status]}`}
+                          value={job.status}
+                          aria-label={`Status for job ${job.job_number}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            onChangeJobStatus(job.id, event.target.value as WarrantyJobStatus);
+                          }}
+                        >
+                          <option value="open">Open</option>
+                          <option value="posted">Posted</option>
+                          <option value="completed">Replaced</option>
+                          <option value="cancelled">Closed</option>
+                        </select>
+                      </span>
+                    </div>
+                    {isActive ? (
+                      <div className="job-expand jobs-expand" onClick={(event) => event.stopPropagation()}>
                       <div>
                         <span>Created</span>
                         <strong>{formatJobDateTime(job.created_at)}</strong>
@@ -3278,10 +3342,49 @@ function WarrantyView({
                         </button>
                       </div>
                     </div>
-                  ) : null}
-                </div>
-              );
-            })}
+                    ) : null}
+                  </div>
+                );
+              })}
+              {pageJobs.length === 0 ? <div className="jobs-empty muted">No jobs match your search.</div> : null}
+            </div>
+          </div>
+
+          <div className="pager">
+            <span className="pager-info">
+              {filteredJobs.length
+                ? `Showing ${firstShown} to ${lastShown} of ${filteredJobs.length} jobs`
+                : "No jobs to show"}
+            </span>
+            <div className="pager-controls">
+              <button
+                className="ghost-button sm"
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setJobsPage(currentPage - 1)}
+              >
+                Previous
+              </button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`pager-num${n === currentPage ? " active" : ""}`}
+                  aria-current={n === currentPage ? "page" : undefined}
+                  onClick={() => setJobsPage(n)}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                className="ghost-button sm"
+                type="button"
+                disabled={currentPage >= pageCount}
+                onClick={() => setJobsPage(currentPage + 1)}
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       </section>
