@@ -2773,6 +2773,11 @@ function MovementForm({
           </select>
         </label>
 
+        <label>
+          Date
+          <input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required />
+        </label>
+
         <p className="field-hint full-width">{movementDescriptions[movementType]}</p>
 
         {movementType === "adjustment" ? (
@@ -2794,12 +2799,7 @@ function MovementForm({
           </div>
         ) : null}
 
-        <label>
-          Date
-          <input type="date" value={movementDate} onChange={(event) => setMovementDate(event.target.value)} required />
-        </label>
-
-        <label>
+        <label className="full-width">
           Product
           <select value={productId} onChange={(event) => setProductId(event.target.value)} required>
             {activeProducts.map((product) => (
@@ -2811,7 +2811,7 @@ function MovementForm({
         </label>
 
         {showFrom ? (
-          <label>
+          <label className="full-width">
             From (stock leaves here)
             <select value={fromHolderId} onChange={(event) => setFromHolderId(event.target.value)} required>
               {fromOptions.map(holderOption)}
@@ -2820,7 +2820,7 @@ function MovementForm({
         ) : null}
 
         {showTo ? (
-          <label>
+          <label className="full-width">
             To (stock arrives here)
             <select value={toHolderId} onChange={(event) => setToHolderId(event.target.value)} required>
               {toOptions.map(holderOption)}
@@ -2828,7 +2828,7 @@ function MovementForm({
           </label>
         ) : null}
 
-        <label>
+        <label className="full-width">
           Quantity
           <input
             type="number"
@@ -3644,6 +3644,15 @@ function LedgerView({
   const visible = isFiltered ? filteredMovements : filteredMovements.slice(0, LEDGER_LIMIT);
   const hiddenCount = filteredMovements.length - visible.length;
 
+  // Group the visible movements into one card per date (visible is already
+  // sorted newest-first, so we can group consecutively).
+  const movementGroups: { date: string; items: Movement[] }[] = [];
+  visible.forEach((movement) => {
+    const last = movementGroups[movementGroups.length - 1];
+    if (last && last.date === movement.movement_date) last.items.push(movement);
+    else movementGroups.push({ date: movement.movement_date, items: [movement] });
+  });
+
   return (
     <section className="panel ledger-panel">
       <div className="panel-header ledger-header">
@@ -3672,45 +3681,56 @@ function LedgerView({
       </div>
 
       <div className="ledger-list">
-        {visible.map((movement) => {
-          const reference = [movement.job_number, movement.customer_name, movement.reference]
-            .filter(Boolean)
-            .join(" / ");
-          return (
-            <div className="ledger-item" key={movement.id}>
-              <span className="ledger-date">{formatDate(movement.movement_date)}</span>
-              <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                {movementLabels[movement.movement_type]}
+        {movementGroups.map((group) => (
+          <div className="ledger-group" key={group.date}>
+            <div className="ledger-group-head">
+              <span className="ledger-group-date">{formatDate(group.date)}</span>
+              <span className="ledger-group-count">
+                {group.items.length} movement{group.items.length === 1 ? "" : "s"}
               </span>
-              <span className="ledger-main">
-                <strong>
-                  {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
-                </strong>
-                <span className="ledger-route">
-                  {routeText(movement)}
-                  {reference ? (
-                    <>
-                      {" · "}
-                      <LinkifiedText value={reference} />
-                    </>
-                  ) : null}
-                  {movement.tracking ? " · " : ""}
-                  <TrackingLink tracking={movement.tracking} />
-                </span>
-              </span>
-              <button
-                className="icon-button danger"
-                type="button"
-                title="Delete movement"
-                aria-label="Delete movement"
-                disabled={submitting}
-                onClick={() => deleteMovement(movement.id)}
-              >
-                <Trash2 size={16} />
-              </button>
             </div>
-          );
-        })}
+            <div className="ledger-group-items">
+              {group.items.map((movement) => {
+                const reference = [movement.job_number, movement.customer_name, movement.reference]
+                  .filter(Boolean)
+                  .join(" / ");
+                return (
+                  <div className="ledger-item" key={movement.id}>
+                    <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                      {movementLabels[movement.movement_type]}
+                    </span>
+                    <span className="ledger-main">
+                      <strong>
+                        {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
+                      </strong>
+                      <span className="ledger-route">
+                        {routeText(movement)}
+                        {reference ? (
+                          <>
+                            {" · "}
+                            <LinkifiedText value={reference} />
+                          </>
+                        ) : null}
+                        {movement.tracking ? " · " : ""}
+                        <TrackingLink tracking={movement.tracking} />
+                      </span>
+                    </span>
+                    <button
+                      className="icon-button danger"
+                      type="button"
+                      title="Delete movement"
+                      aria-label="Delete movement"
+                      disabled={submitting}
+                      onClick={() => deleteMovement(movement.id)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
         {visible.length === 0 ? <p className="ledger-empty muted">No movements to show.</p> : null}
         {hiddenCount > 0 ? (

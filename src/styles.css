@@ -883,7 +883,7 @@ textarea:focus {
 
 .ledger-item {
   display: grid;
-  grid-template-columns: 84px minmax(96px, auto) minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr) 36px;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -3079,4 +3079,49 @@ html {
   .warranty-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ===== Movement ledger grouped into one card per date ===== */
+.ledger-group {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.ledger-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f2f5f0;
+  border-bottom: 1px solid var(--line);
+}
+.ledger-group-date {
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 780;
+}
+.ledger-group-count {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+.ledger-group-items {
+  display: grid;
+}
+.ledger-group-items .ledger-item {
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr) 36px;
+  padding: 11px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.ledger-group-items .ledger-item:last-child {
+  border-bottom: 0;
+}
+.ledger-group-items .ledger-item:hover {
+  background: #f6f9f4;
 }
