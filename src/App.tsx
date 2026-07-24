@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Boxes,
+  Check,
   CheckCircle2,
   ClipboardList,
   Cloud,
@@ -41,6 +42,8 @@ import {
   type StockReportInput,
 } from "./pickupSlip";
 import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
+import { formatJobDateTime, statusCardClass, statusChipClass } from "./warranty";
+import WarrantyTracker from "./WarrantyTracker";
 import type {
   BalanceRow,
   Holder,
@@ -110,21 +113,6 @@ const movementTone: Record<MovementType, string> = {
 const conditionLabels: Record<ProductCondition, string> = {
   good: "Good",
   faulty: "Faulty",
-};
-
-const statusLabels: Record<WarrantyJobStatus, string> = {
-  open: "Open",
-  posted: "Posted",
-  completed: "Replaced",
-  cancelled: "Closed",
-};
-
-// Class suffix used to colour each status chip / select.
-const statusChipClass: Record<WarrantyJobStatus, string> = {
-  open: "status-open",
-  posted: "status-posted",
-  completed: "status-replaced",
-  cancelled: "status-closed",
 };
 
 const today = () => businessDateValue();
@@ -400,6 +388,8 @@ export default function App() {
   const [movementFilter, setMovementFilter] = useState<MovementType | "all">("all");
 
   const [selectedWarrantyJobId, setSelectedWarrantyJobId] = useState("");
+  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
+  const [warrantyTrackerOpen, setWarrantyTrackerOpen] = useState(false);
   const [warrantySearch, setWarrantySearch] = useState("");
   const [warrantyJobNumber, setWarrantyJobNumber] = useState("");
   const [warrantyCustomerName, setWarrantyCustomerName] = useState("");
@@ -811,6 +801,49 @@ export default function App() {
       await updateWarrantyJob(jobId, { status });
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : "Could not update the job status.");
+    }
+  }
+
+  async function handleSaveJobNotes(jobId: string, notes: string) {
+    setError(null);
+    setMessage(null);
+    try {
+      await updateWarrantyJob(jobId, { notes: notes.trim() || null });
+      setMessage("Job notes updated.");
+    } catch (noteError) {
+      setError(noteError instanceof Error ? noteError.message : "Could not update the notes.");
+    }
+  }
+
+  async function deleteWarrantyJobs(ids: string[]) {
+    if (!ids.length) return;
+    if (usingRemote && supabase) {
+      const { error: deleteError } = await supabase.from("warranty_jobs").delete().in("id", ids);
+      if (deleteError) throw deleteError;
+      setData((current) =>
+        normalizeData({ ...current, warrantyJobs: current.warrantyJobs.filter((job) => !ids.includes(job.id)) }),
+      );
+      return;
+    }
+    updateLocal((current) => ({
+      ...current,
+      warrantyJobs: current.warrantyJobs.filter((job) => !ids.includes(job.id)),
+    }));
+  }
+
+  async function handleDeleteJobs(ids: string[]) {
+    if (!ids.length) return;
+    const label = ids.length === 1 ? "this warranty job" : `${ids.length} warranty jobs`;
+    if (!window.confirm(`Delete ${label}? This cannot be undone. Stock movements already recorded are kept.`)) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteWarrantyJobs(ids);
+      if (ids.includes(selectedWarrantyJobId)) setSelectedWarrantyJobId("");
+      setSelectedJobIds((current) => current.filter((id) => !ids.includes(id)));
+      setMessage(ids.length === 1 ? "Warranty job deleted." : `${ids.length} warranty jobs deleted.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete the job(s).");
     }
   }
 
@@ -2146,9 +2179,36 @@ export default function App() {
             />
           ) : null}
 
-          {activeTab === "warranty" ? (
+          {activeTab === "warranty" && warrantyTrackerOpen ? (
+            <WarrantyTracker
+              rows={sortedWarrantyJobs.map((job) => ({
+                job,
+                posted: sumJobMovement(job, data.movements, "customer_post", "good"),
+                installed: sumJobMovement(job, data.movements, "install", "good"),
+                faulty: sumJobMovement(job, data.movements, "faulty_collect", "faulty"),
+                postedProducts: describeMovementProducts(job, data.movements, data.products, "customer_post") || "None",
+                installedProducts: describeMovementProducts(job, data.movements, data.products, "install") || "None",
+              }))}
+              onBack={() => setWarrantyTrackerOpen(false)}
+              onChangeStatus={handleChangeJobStatus}
+              onSaveNotes={handleSaveJobNotes}
+              onDelete={handleDeleteJobs}
+            />
+          ) : null}
+
+          {activeTab === "warranty" && !warrantyTrackerOpen ? (
             <WarrantyView
               activeProducts={activeProducts}
+              selectedJobIds={selectedJobIds}
+              onToggleJobSelect={(id) =>
+                setSelectedJobIds((current) =>
+                  current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+                )
+              }
+              onSelectAllJobs={(ids, checked) => setSelectedJobIds(checked ? ids : [])}
+              onDeleteJobs={handleDeleteJobs}
+              onSaveJobNotes={handleSaveJobNotes}
+              onOpenTracker={() => setWarrantyTrackerOpen(true)}
               changeProductId={changeProductId}
               changeQuantity={changeQuantity}
               changeTechnicianId={changeTechnicianId}
@@ -2861,6 +2921,12 @@ function WarrantyView({
   warehouses,
   onCreateJob,
   onChangeJobStatus,
+  selectedJobIds,
+  onToggleJobSelect,
+  onSelectAllJobs,
+  onDeleteJobs,
+  onSaveJobNotes,
+  onOpenTracker,
   onPostStock,
   onRecordChangeover,
   setChangeNotes,
@@ -2918,6 +2984,12 @@ function WarrantyView({
   warehouses: Holder[];
   onCreateJob: (event: FormEvent<HTMLFormElement>) => void;
   onChangeJobStatus: (jobId: string, status: WarrantyJobStatus) => void;
+  selectedJobIds: string[];
+  onToggleJobSelect: (id: string) => void;
+  onSelectAllJobs: (ids: string[], checked: boolean) => void;
+  onDeleteJobs: (ids: string[]) => void;
+  onSaveJobNotes: (id: string, notes: string) => void;
+  onOpenTracker: () => void;
   onPostStock: (event: FormEvent<HTMLFormElement>) => void;
   onRecordChangeover: (event: FormEvent<HTMLFormElement>) => void;
   setChangeNotes: (value: string) => void;
@@ -2946,6 +3018,8 @@ function WarrantyView({
   setPackReference: (value: string) => void;
   onRequestPack: () => void;
 }) {
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [draftNotes, setDraftNotes] = useState("");
   const term = searchTerm.trim().toLowerCase();
   const filteredJobs = jobs.filter((job) =>
     [job.job_number, job.customer_name, job.customer_phone, job.customer_address, job.status]
@@ -2954,6 +3028,8 @@ function WarrantyView({
       .toLowerCase()
       .includes(term),
   );
+  const filteredJobIds = filteredJobs.map((job) => job.id);
+  const allJobsSelected = filteredJobIds.length > 0 && filteredJobIds.every((id) => selectedJobIds.includes(id));
 
   const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
   const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
@@ -3045,10 +3121,35 @@ function WarrantyView({
               <h2>Job List</h2>
               <p>{filteredJobs.length} visible jobs</p>
             </div>
-            <label className="search-box">
-              <Search size={17} />
-              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search jobs" />
+            <div className="ledger-tools">
+              <label className="search-box">
+                <Search size={17} />
+                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search jobs" />
+              </label>
+              <button className="secondary-button" type="button" onClick={onOpenTracker}>
+                <ClipboardList size={17} />
+                Open full tracker
+              </button>
+            </div>
+          </div>
+
+          <div className="job-bulkbar">
+            <label className="select-all">
+              <input
+                type="checkbox"
+                checked={allJobsSelected}
+                onChange={(event) => onSelectAllJobs(filteredJobIds, event.target.checked)}
+              />
+              {allJobsSelected ? "Clear" : "Select all"}
             </label>
+            {selectedJobIds.length > 0 ? (
+              <button className="danger-button" type="button" onClick={() => onDeleteJobs(selectedJobIds)}>
+                <Trash2 size={15} />
+                Delete {selectedJobIds.length} selected
+              </button>
+            ) : (
+              <span className="muted">Tick jobs to bulk-delete</span>
+            )}
           </div>
 
           <div className="job-list">
@@ -3058,9 +3159,10 @@ function WarrantyView({
               const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
               const isActive = selectedJobId === job.id;
               const rowType: WarrantyJobType = job.job_type ?? "warranty";
+              const isPicked = selectedJobIds.includes(job.id);
               return (
                 <div
-                  className={isActive ? "job-row active" : "job-row"}
+                  className={`job-row ${statusCardClass[job.status]}${isActive ? " active" : ""}${isPicked ? " picked" : ""}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => setSelectedJobId(job.id)}
@@ -3073,6 +3175,9 @@ function WarrantyView({
                   key={job.id}
                 >
                   <span className="job-head">
+                    <label className="pick" onClick={(event) => event.stopPropagation()}>
+                      <input type="checkbox" checked={isPicked} onChange={() => onToggleJobSelect(job.id)} />
+                    </label>
                     <strong>{job.job_number}</strong>
                     {job.customer_name}
                     <em className={`type-chip ${rowType === "oneoff" ? "info" : "neutral"} job-type-tag`}>
@@ -3098,7 +3203,15 @@ function WarrantyView({
                     Posted {posted} | Installed {installed} | Faulty {faulty}
                   </span>
                   {isActive ? (
-                    <div className="job-expand">
+                    <div className="job-expand" onClick={(event) => event.stopPropagation()}>
+                      <div>
+                        <span>Created</span>
+                        <strong>{formatJobDateTime(job.created_at)}</strong>
+                      </div>
+                      <div>
+                        <span>Last action</span>
+                        <strong>{formatJobDateTime(job.updated_at ?? job.created_at)}</strong>
+                      </div>
                       <div>
                         <span>Address</span>
                         <strong>{job.customer_address || "Not entered"}</strong>
@@ -3115,9 +3228,54 @@ function WarrantyView({
                         <span>Installed by electrician</span>
                         <strong>{describeMovementProducts(job, data.movements, data.products, "install") || "None"}</strong>
                       </div>
-                      <div>
-                        <span>Faulty in electrician inventory</span>
-                        <strong>{describeMovementProducts(job, data.movements, data.products, "faulty_collect") || "None"}</strong>
+                      <div className="full-width job-notes">
+                        <div className="job-notes-head">
+                          <span>Notes</span>
+                          {editingNotesId === job.id ? (
+                            <span className="job-notes-tools">
+                              <button
+                                className="icon-text-button"
+                                type="button"
+                                onClick={() => {
+                                  onSaveJobNotes(job.id, draftNotes);
+                                  setEditingNotesId(null);
+                                }}
+                              >
+                                <Check size={15} /> Save
+                              </button>
+                              <button className="icon-text-button" type="button" onClick={() => setEditingNotesId(null)}>
+                                <X size={15} /> Cancel
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              className="icon-text-button"
+                              type="button"
+                              onClick={() => {
+                                setEditingNotesId(job.id);
+                                setDraftNotes(job.notes ?? "");
+                              }}
+                            >
+                              <Pencil size={15} /> Edit
+                            </button>
+                          )}
+                        </div>
+                        {editingNotesId === job.id ? (
+                          <textarea
+                            rows={3}
+                            value={draftNotes}
+                            onChange={(event) => setDraftNotes(event.target.value)}
+                            autoFocus
+                          />
+                        ) : (
+                          <strong className={job.notes ? "" : "muted"}>{job.notes || "No notes yet."}</strong>
+                        )}
+                      </div>
+                      <div className="full-width job-row-actions">
+                        <button className="danger-button ghost" type="button" onClick={() => onDeleteJobs([job.id])}>
+                          <Trash2 size={15} />
+                          Delete job
+                        </button>
                       </div>
                     </div>
                   ) : null}
