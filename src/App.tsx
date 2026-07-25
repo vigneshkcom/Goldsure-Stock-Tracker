@@ -2190,6 +2190,7 @@ export default function App() {
                 faulty: sumJobMovement(job, data.movements, "faulty_collect", "faulty"),
                 postedProducts: describeMovementProducts(job, data.movements, data.products, "customer_post") || "None",
                 installedProducts: describeMovementProducts(job, data.movements, data.products, "install") || "None",
+                replacedProducts: describeMovementProducts(job, data.movements, data.products, "faulty_collect") || "None",
               }))}
               onBack={() => setWarrantyTrackerOpen(false)}
               onChangeStatus={handleChangeJobStatus}
@@ -3289,8 +3290,12 @@ function WarrantyView({
                         <strong>{describeMovementProducts(job, data.movements, data.products, "customer_post") || "None"}</strong>
                       </div>
                       <div>
-                        <span>Installed by electrician</span>
+                        <span>Installed</span>
                         <strong>{describeMovementProducts(job, data.movements, data.products, "install") || "None"}</strong>
+                      </div>
+                      <div>
+                        <span>Replaced (faulty returned)</span>
+                        <strong>{describeMovementProducts(job, data.movements, data.products, "faulty_collect") || "None"}</strong>
                       </div>
                       <div className="full-width job-notes">
                         <div className="job-notes-head">

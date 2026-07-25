@@ -10,6 +10,7 @@ export type TrackerRow = {
   faulty: number;
   postedProducts: string;
   installedProducts: string;
+  replacedProducts: string;
 };
 
 type SortKey = "created-desc" | "created-asc" | "updated-desc" | "job" | "status";
@@ -206,8 +207,12 @@ export default function WarrantyTracker({
                   <strong>{row.postedProducts}</strong>
                 </div>
                 <div>
-                  <span>Installed by electrician</span>
+                  <span>Installed</span>
                   <strong>{row.installedProducts}</strong>
+                </div>
+                <div>
+                  <span>Replaced (faulty returned)</span>
+                  <strong>{row.replacedProducts}</strong>
                 </div>
               </div>
 
