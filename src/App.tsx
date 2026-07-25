@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Boxes,
   Check,
@@ -388,6 +389,8 @@ export default function App() {
   const [editingHolderId, setEditingHolderId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [movementFilter, setMovementFilter] = useState<MovementType | "all">("all");
+  const [ledgerFull, setLedgerFull] = useState(false);
+  const [ledgerHolderId, setLedgerHolderId] = useState("");
 
   const [selectedWarrantyJobId, setSelectedWarrantyJobId] = useState("");
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
@@ -549,6 +552,13 @@ export default function App() {
           (b.created_at ?? "").localeCompare(a.created_at ?? ""),
       )
       .filter((movement) => movementFilter === "all" || movement.movement_type === movementFilter)
+      .filter(
+        (movement) =>
+          !ledgerFull ||
+          !ledgerHolderId ||
+          movement.from_holder_id === ledgerHolderId ||
+          movement.to_holder_id === ledgerHolderId,
+      )
       .filter((movement) => {
         if (!term) return true;
         const product = data.products.find((item) => item.id === movement.product_id)?.name ?? "";
@@ -570,7 +580,7 @@ export default function App() {
           .toLowerCase();
         return haystack.includes(term);
       });
-  }, [data.holders, data.movements, data.products, movementFilter, searchTerm]);
+  }, [data.holders, data.movements, data.products, movementFilter, searchTerm, ledgerFull, ledgerHolderId]);
 
   useEffect(() => {
     if (!supabase || localOnly) {
@@ -2080,7 +2090,28 @@ export default function App() {
             />
           ) : null}
 
-          {activeTab === "movements" ? (
+          {activeTab === "movements" && ledgerFull ? (
+            <LedgerView
+              data={data}
+              filteredMovements={filteredMovements}
+              movementFilter={movementFilter}
+              searchTerm={searchTerm}
+              submitting={submitting}
+              deleteMovement={deleteMovement}
+              setMovementFilter={setMovementFilter}
+              setSearchTerm={setSearchTerm}
+              full
+              holders={activeHolders}
+              holderId={ledgerHolderId}
+              setHolderId={setLedgerHolderId}
+              onBack={() => {
+                setLedgerFull(false);
+                setLedgerHolderId("");
+              }}
+            />
+          ) : null}
+
+          {activeTab === "movements" && !ledgerFull ? (
             <section className="workspace-grid">
               <MovementForm
                 activeHolders={activeHolders}
@@ -2121,6 +2152,7 @@ export default function App() {
                 deleteMovement={deleteMovement}
                 setMovementFilter={setMovementFilter}
                 setSearchTerm={setSearchTerm}
+                onOpenFull={() => setLedgerFull(true)}
               />
             </section>
           ) : null}
@@ -2178,6 +2210,13 @@ export default function App() {
               onSendPickupSlip={openComposePickupSlip}
               onEmailReport={openComposeStockReport}
               onDownloadReport={downloadStockReport}
+              onViewHistory={(electricianId) => {
+                setSearchTerm("");
+                setMovementFilter("all");
+                setLedgerHolderId(electricianId);
+                setLedgerFull(true);
+                setActiveTab("movements");
+              }}
             />
           ) : null}
 
@@ -3625,6 +3664,12 @@ function LedgerView({
   deleteMovement,
   setMovementFilter,
   setSearchTerm,
+  full = false,
+  holders = [],
+  holderId = "",
+  setHolderId,
+  onBack,
+  onOpenFull,
 }: {
   data: StockData;
   filteredMovements: Movement[];
@@ -3634,6 +3679,12 @@ function LedgerView({
   deleteMovement: (movementId: string) => void;
   setMovementFilter: (value: MovementType | "all") => void;
   setSearchTerm: (value: string) => void;
+  full?: boolean;
+  holders?: Holder[];
+  holderId?: string;
+  setHolderId?: (value: string) => void;
+  onBack?: () => void;
+  onOpenFull?: () => void;
 }) {
   const holderName = (id: string | null) => data.holders.find((holder) => holder.id === id)?.name ?? "";
   const productName = (id: string) => data.products.find((product) => product.id === id)?.name ?? "Unknown product";
@@ -3646,8 +3697,9 @@ function LedgerView({
 
   const isFiltered = searchTerm.trim() !== "" || movementFilter !== "all";
   const LEDGER_LIMIT = 12;
-  const visible = isFiltered ? filteredMovements : filteredMovements.slice(0, LEDGER_LIMIT);
-  const hiddenCount = filteredMovements.length - visible.length;
+  const visible = full || isFiltered ? filteredMovements : filteredMovements.slice(0, LEDGER_LIMIT);
+  const hiddenCount = full ? 0 : filteredMovements.length - visible.length;
+  const holderLabel = holders.find((holder) => holder.id === holderId)?.name ?? "";
 
   // Group the visible movements into one card per date (visible is already
   // sorted newest-first, so we can group consecutively).
@@ -3659,21 +3711,41 @@ function LedgerView({
   });
 
   return (
-    <section className="panel ledger-panel">
+    <section className={`panel ledger-panel${full ? " ledger-full" : ""}`}>
       <div className="panel-header ledger-header">
-        <div>
-          <h2>Movement Ledger</h2>
-          <p>
-            {isFiltered
-              ? `${filteredMovements.length.toLocaleString()} matching movements`
-              : `Showing ${visible.length} of ${filteredMovements.length.toLocaleString()} movements`}
-          </p>
+        <div className="ledger-head-left">
+          {full && onBack ? (
+            <button className="ghost-button sm" type="button" onClick={onBack}>
+              <ArrowLeft size={17} />
+              Back
+            </button>
+          ) : null}
+          <div>
+            <h2>Movement Ledger{full && holderLabel ? ` — ${holderLabel}` : ""}</h2>
+            <p>
+              {full
+                ? `${filteredMovements.length.toLocaleString()} movement${filteredMovements.length === 1 ? "" : "s"}`
+                : isFiltered
+                  ? `${filteredMovements.length.toLocaleString()} matching movements`
+                  : `Showing ${visible.length} of ${filteredMovements.length.toLocaleString()} movements`}
+            </p>
+          </div>
         </div>
         <div className="ledger-tools">
           <label className="search-box">
             <Search size={17} />
             <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search" />
           </label>
+          {full && setHolderId ? (
+            <select value={holderId} onChange={(event) => setHolderId(event.target.value)} aria-label="Filter by holder">
+              <option value="">All holders</option>
+              {holders.map((holder) => (
+                <option value={holder.id} key={holder.id}>
+                  {holder.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <select value={movementFilter} onChange={(event) => setMovementFilter(event.target.value as MovementType | "all")}>
             <option value="all">All</option>
             {(Object.keys(movementLabels) as MovementType[]).map((type) => (
@@ -3682,6 +3754,12 @@ function LedgerView({
               </option>
             ))}
           </select>
+          {!full && onOpenFull ? (
+            <button className="secondary-button" type="button" onClick={onOpenFull}>
+              <ClipboardList size={17} />
+              Open full ledger
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -3740,7 +3818,14 @@ function LedgerView({
         {visible.length === 0 ? <p className="ledger-empty muted">No movements to show.</p> : null}
         {hiddenCount > 0 ? (
           <p className="ledger-more muted">
-            {hiddenCount.toLocaleString()} older movements hidden — search or filter to find them.
+            {hiddenCount.toLocaleString()} older movements hidden.{" "}
+            {onOpenFull ? (
+              <button className="linklike" type="button" onClick={onOpenFull}>
+                Open the full ledger
+              </button>
+            ) : (
+              "Search or filter to find them."
+            )}
           </p>
         ) : null}
       </div>
@@ -3800,6 +3885,7 @@ function ElectriciansView({
   onSendPickupSlip,
   onEmailReport,
   onDownloadReport,
+  onViewHistory,
 }: {
   technicians: Holder[];
   warehouses: Holder[];
@@ -3852,6 +3938,7 @@ function ElectriciansView({
   onSendPickupSlip: () => void;
   onEmailReport: () => void;
   onDownloadReport: () => void;
+  onViewHistory: (electricianId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
@@ -4005,6 +4092,10 @@ function ElectriciansView({
                     </p>
                   </div>
                   <div className="header-actions">
+                    <button className="secondary-button" type="button" onClick={() => onViewHistory(electrician.id)}>
+                      <ClipboardList size={17} />
+                      Movement history
+                    </button>
                     <button className="secondary-button" type="button" onClick={onEmailReport}>
                       <Send size={17} />
                       Email report

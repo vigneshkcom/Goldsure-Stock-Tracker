@@ -3160,3 +3160,27 @@ html {
   color: var(--red);
   background: var(--red-soft);
 }
+
+/* Full-page movement ledger. */
+.ledger-head-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ledger-full .ledger-list {
+  max-height: none;
+  overflow: visible;
+}
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-deep);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linklike:hover {
+  color: var(--ink);
+}
