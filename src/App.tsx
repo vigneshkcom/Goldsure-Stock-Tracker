@@ -3703,6 +3703,25 @@ function LinkifiedText({ value }: { value: string }) {
   );
 }
 
+// Like LinkifiedText, but long URLs are collapsed to a short "Link" chip that
+// opens the address in a new tab, so a big workdrive URL does not fill the row.
+function LinkifiedCompact({ value, label = "Link" }: { value: string; label?: string }) {
+  const parts = value.split(/(https?:\/\/[^\s]+)/gi);
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^https?:\/\//i.test(part) ? (
+          <a className="reference-link ref-chip" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
+            {label}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 function LedgerView({
   data,
   filteredMovements,
@@ -3749,14 +3768,20 @@ function LedgerView({
   const hiddenCount = full ? 0 : filteredMovements.length - visible.length;
   const holderLabel = holders.find((holder) => holder.id === holderId)?.name ?? "";
 
-  // Group the visible movements into one card per date (visible is already
-  // sorted newest-first, so we can group consecutively).
-  const movementGroups: { date: string; items: Movement[] }[] = [];
+  // Group the visible movements into one card per date. Installs are dated to
+  // the week-ending Sunday, so they get their own card headed "Week ending …"
+  // even when a normal movement shares that calendar date.
+  const groupMap = new Map<string, { date: string; install: boolean; items: Movement[] }>();
   visible.forEach((movement) => {
-    const last = movementGroups[movementGroups.length - 1];
-    if (last && last.date === movement.movement_date) last.items.push(movement);
-    else movementGroups.push({ date: movement.movement_date, items: [movement] });
+    const install = movement.movement_type === "install";
+    const key = `${movement.movement_date}|${install ? "week" : "day"}`;
+    const group = groupMap.get(key) ?? { date: movement.movement_date, install, items: [] };
+    group.items.push(movement);
+    groupMap.set(key, group);
   });
+  const movementGroups = Array.from(groupMap.values()).sort(
+    (a, b) => b.date.localeCompare(a.date) || (a.install === b.install ? 0 : a.install ? -1 : 1),
+  );
 
   return (
     <section className={`panel ledger-panel${full ? " ledger-full" : ""}`}>
@@ -3812,10 +3837,13 @@ function LedgerView({
       </div>
 
       <div className="ledger-list">
-        {movementGroups.map((group) => (
-          <div className="ledger-group" key={group.date}>
+        {movementGroups.map((group) => {
+          return (
+          <div className="ledger-group" key={`${group.date}|${group.install ? "week" : "day"}`}>
             <div className="ledger-group-head">
-              <span className="ledger-group-date">{formatDate(group.date)}</span>
+              <span className="ledger-group-date">
+                {group.install ? `Week ending ${formatDate(group.date)}` : formatDate(group.date)}
+              </span>
               <span className="ledger-group-count">
                 {group.items.length} movement{group.items.length === 1 ? "" : "s"}
               </span>
@@ -3839,7 +3867,7 @@ function LedgerView({
                         {reference ? (
                           <>
                             {" · "}
-                            <LinkifiedText value={reference} />
+                            <LinkifiedCompact value={reference} />
                           </>
                         ) : null}
                         {movement.tracking ? " · " : ""}
@@ -3861,7 +3889,8 @@ function LedgerView({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {visible.length === 0 ? <p className="ledger-empty muted">No movements to show.</p> : null}
         {hiddenCount > 0 ? (
@@ -4619,7 +4648,7 @@ function ElectriciansView({
                                   <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
                                   <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
                                   <td>
-                                    <LinkifiedText
+                                    <LinkifiedCompact
                                       value={[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
                                         .filter(Boolean)
                                         .join(" / ")}

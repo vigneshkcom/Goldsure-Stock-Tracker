@@ -3539,3 +3539,20 @@ html {
 @media (max-width: 720px) {
   .wj-facts { grid-template-columns: 1fr; }
 }
+
+/* Compact reference link chip in the movement ledger / history. */
+.reference-link.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.reference-link.ref-chip::before { content: "↗"; font-size: 11px; }
+.reference-link.ref-chip:hover { text-decoration: underline; }
