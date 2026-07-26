@@ -3184,3 +3184,28 @@ html {
 .linklike:hover {
   color: var(--ink);
 }
+
+/* Keep the ledger's Search / filter / Open-full-ledger controls on one line. */
+.ledger-panel .ledger-header {
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+.ledger-panel .ledger-tools {
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+}
+.ledger-panel .ledger-tools select {
+  width: auto;
+  min-width: 96px;
+  flex: 0 0 auto;
+}
+.ledger-panel .ledger-tools .search-box {
+  width: auto;
+  flex: 1 1 90px;
+  min-width: 0;
+}
+.ledger-panel .ledger-tools .secondary-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
