@@ -14,9 +14,11 @@ import {
   DownloadCloud,
   Factory,
   HardHat,
+  Mail,
   PackageCheck,
   PackagePlus,
   Pencil,
+  Phone,
   Plus,
   RefreshCw,
   Search,
@@ -3941,7 +3943,16 @@ function ElectriciansView({
   onViewHistory: (electricianId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [tab, setTab] = useState<"overview" | "give" | "install" | "request" | "loss" | "history">("overview");
+  const [rosterTerm, setRosterTerm] = useState("");
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
+  const initialsOf = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?";
   const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
   const warehouseName = (id: string | null) => warehouses.find((holder) => holder.id === id)?.name ?? "";
   const holderHasStock = (holder: Holder) =>
@@ -3983,6 +3994,13 @@ function ElectriciansView({
   const totalOnHand = electrician
     ? activeProducts.reduce((total, product) => total + getBalance(goodBalanceMap, electrician.id, product.id), 0)
     : 0;
+  const totalFaulty = electrician
+    ? activeProducts.reduce((total, product) => total + getBalance(faultyBalanceMap, electrician.id, product.id), 0)
+    : 0;
+  const lastActivityFor = (holderId: string) =>
+    data.movements
+      .filter((movement) => movement.from_holder_id === holderId || movement.to_holder_id === holderId)
+      .reduce((latest, movement) => (movement.movement_date > latest ? movement.movement_date : latest), "");
 
   // Week-ending options: recent Sundays, plus any weeks that already have
   // installs, plus whatever is currently selected.
@@ -4022,495 +4040,562 @@ function ElectriciansView({
     .reduce((total, movement) => total + (movement.charge_amount ?? 0), 0);
 
   return (
-    <section className="electricians-stack">
-      <div className="electricians-grid">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Electricians</h2>
-              <p>{showAll ? `${technicians.length} on the team` : `${withStock.length} with stock`}</p>
+    <section className="elec2">
+      <div className="elec2-grid">
+        <aside className="panel el-roster">
+          <div className="el-roster-head">
+            <div className="el-roster-top">
+              <div>
+                <h2>Electricians</h2>
+                <p>{showAll ? `${technicians.length} on the team` : `${withStock.length} with stock · ${technicians.length} total`}</p>
+              </div>
+              <button className="secondary-button sm" type="button" onClick={() => setShowAll(!showAll)}>
+                {showAll ? "Only with stock" : "Show all"}
+              </button>
             </div>
-            <button className="secondary-button" type="button" onClick={() => setShowAll(!showAll)}>
-              {showAll ? "Only with stock" : "Show all"}
-            </button>
+            <label className="el-search">
+              <Search size={16} />
+              <input
+                value={rosterTerm}
+                onChange={(event) => setRosterTerm(event.target.value)}
+                placeholder="Search electricians"
+              />
+            </label>
           </div>
-          <div className="job-list">
-            {visibleTechnicians.map((holder) => {
-              const onHand = activeProducts.reduce(
-                (total, product) => total + getBalance(goodBalanceMap, holder.id, product.id),
-                0,
-              );
+          <div className="el-roster-list">
+            {(() => {
+              const needle = rosterTerm.trim().toLowerCase();
+              const rows = visibleTechnicians
+                .filter((holder) => !needle || holder.name.toLowerCase().includes(needle))
+                .map((holder) => ({
+                  holder,
+                  onHand: activeProducts.reduce(
+                    (total, product) => total + getBalance(goodBalanceMap, holder.id, product.id),
+                    0,
+                  ),
+                }));
+              const withHand = rows.filter((row) => row.onHand > 0);
+              const withoutHand = rows.filter((row) => row.onHand <= 0);
+              const renderRow = ({ holder, onHand }: { holder: Holder; onHand: number }) => {
+                const last = lastActivityFor(holder.id);
+                return (
+                  <button
+                    className={`el-rrow${selectedElectricianId === holder.id ? " active" : ""}${onHand > 0 ? "" : " zero"}`}
+                    type="button"
+                    onClick={() => setSelectedElectricianId(holder.id)}
+                    key={holder.id}
+                  >
+                    <span className="el-av">{initialsOf(holder.name)}</span>
+                    <span className="el-who">
+                      <span className="el-nm">
+                        <span className="el-dot" />
+                        {holder.name}
+                      </span>
+                      <span className="el-sub">{last ? `Updated ${formatDate(last)}` : "No movements yet"}</span>
+                    </span>
+                    <span className="el-chip">{onHand.toLocaleString()}</span>
+                  </button>
+                );
+              };
               return (
-                <button
-                  className={selectedElectricianId === holder.id ? "job-row active" : "job-row"}
-                  type="button"
-                  onClick={() => setSelectedElectricianId(holder.id)}
-                  key={holder.id}
-                >
-                  <span>
-                    <strong>{holder.name}</strong>
-                    Electrician
-                  </span>
-                  <span className={onHand > 0 ? "status-chip ok" : "status-chip attention"}>{onHand} on hand</span>
-                </button>
+                <>
+                  {withHand.map(renderRow)}
+                  {withoutHand.length ? <div className="el-rgroup">No stock on hand</div> : null}
+                  {withoutHand.map(renderRow)}
+                  {rows.length === 0 ? (
+                    <p className="muted" style={{ padding: "8px 4px" }}>
+                      {needle ? "No electricians match your search." : "No electricians are holding stock. Use “Show all” to pick one."}
+                    </p>
+                  ) : null}
+                </>
               );
-            })}
-            {visibleTechnicians.length === 0 ? (
-              <p className="muted" style={{ padding: "4px 2px" }}>
-                No electricians are holding stock. Use “Show all” to pick one and give them stock.
-              </p>
-            ) : null}
+            })()}
           </div>
-        </section>
+        </aside>
 
-        <div className="electricians-detail">
+        <div className="el-detail">
           {electrician ? (
             <>
-              <div className="metric-grid">
-                <div className="metric-card">
-                  <Boxes size={22} />
-                  <span>On Hand (good)</span>
-                  <strong>{totalOnHand.toLocaleString()}</strong>
-                </div>
-                {activeProducts.map((product) => (
-                  <div className="metric-card" key={product.id}>
-                    <PackageCheck size={22} />
-                    <span>{product.sku ?? product.name}</span>
-                    <strong>
-                      {(electrician ? getBalance(goodBalanceMap, electrician.id, product.id) : 0).toLocaleString()}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-
-              <section className="panel">
-                <div className="panel-header">
-                  <div>
+              <section className="panel el-card">
+                <div className="el-dhead">
+                  <span className="el-bigav">{initialsOf(electrician.name)}</span>
+                  <div className="el-dwho">
                     <h2>{electrician.name}</h2>
-                    <p>
-                      Current stock &middot; Returned {totalReturned.toLocaleString()}
-                    </p>
+                    <div className="el-tags">
+                      <span className="el-tagchip">Electrician</span>
+                      {electrician.phone ? (
+                        <span className="el-tagchip">
+                          <Phone size={13} />
+                          {electrician.phone}
+                        </span>
+                      ) : null}
+                      {electrician.email ? (
+                        <span className="el-tagchip">
+                          <Mail size={13} />
+                          {electrician.email}
+                        </span>
+                      ) : null}
+                      {totalReturned > 0 ? (
+                        <span className="el-tagchip">Returned {totalReturned.toLocaleString()}</span>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="header-actions">
-                    <button className="secondary-button" type="button" onClick={() => onViewHistory(electrician.id)}>
-                      <ClipboardList size={17} />
+                  <div className="el-dactions">
+                    <button className="secondary-button sm" type="button" onClick={() => onViewHistory(electrician.id)}>
+                      <ClipboardList size={16} />
                       Movement history
                     </button>
-                    <button className="secondary-button" type="button" onClick={onEmailReport}>
-                      <Send size={17} />
+                    <button className="secondary-button sm" type="button" onClick={onEmailReport}>
+                      <Send size={16} />
                       Email report
                     </button>
-                    <button className="secondary-button" type="button" onClick={onDownloadReport}>
-                      <Download size={18} />
-                      Download PDF
+                    <button className="secondary-button sm" type="button" onClick={onDownloadReport}>
+                      <Download size={16} />
+                      PDF
                     </button>
                   </div>
                 </div>
-                <div className="responsive-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>On hand (good)</th>
-                        <th>Faulty held</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeProducts.map((product) => (
-                        <tr key={product.id}>
-                          <td>
-                            <strong>{product.name}</strong>
-                            <span>{product.sku}</span>
-                          </td>
-                          <td>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</td>
-                          <td>{getBalance(faultyBalanceMap, electrician.id, product.id).toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
 
-              <div className="electricians-forms">
-                <section className="panel">
-                  <div className="panel-header">
-                    <div>
-                      <h2>Give Stock</h2>
-                      <p>Send several products to {electrician.name} in one go.</p>
-                    </div>
+                <div className="el-statstrip">
+                  <div className="el-stat hero">
+                    <span>On hand (good)</span>
+                    <strong>{totalOnHand.toLocaleString()}</strong>
                   </div>
-                  <form className="stack-form" onSubmit={onGiveStock}>
-                    <div className="form-row">
-                      <label>
-                        Date
-                        <input type="date" value={giveDate} onChange={(event) => setGiveDate(event.target.value)} required />
-                      </label>
-                      <label>
-                        From warehouse
-                        <select value={giveWarehouseId} onChange={(event) => setGiveWarehouseId(event.target.value)} required>
-                          {warehouses.map((holder) => (
-                            <option value={holder.id} key={holder.id}>
-                              {holder.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                  {activeProducts.map((product) => (
+                    <div className="el-stat" key={product.id}>
+                      <span>{product.sku ?? product.name}</span>
+                      <strong>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</strong>
                     </div>
-                    <div className="qty-list">
-                      {activeProducts.map((product) => (
-                        <div className="qty-row" key={product.id}>
-                          <div className="qty-name">
-                            <strong>{product.name}</strong>
-                            <span>{getBalance(goodBalanceMap, giveWarehouseId, product.id).toLocaleString()} in warehouse</span>
-                          </div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="0"
-                            value={giveQty[product.id] ?? ""}
-                            onChange={(event) => setGiveQty({ ...giveQty, [product.id]: event.target.value })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <label>
-                      Reference
-                      <input
-                        value={giveReference}
-                        onChange={(event) => setGiveReference(event.target.value)}
-                        placeholder="Pickup slip"
-                      />
-                    </label>
-                    <button className="primary-button" type="submit" disabled={submitting || !warehouses.length}>
-                      <Truck size={18} />
-                      Give stock
-                    </button>
-                  </form>
-                </section>
-
-                <section className="panel">
-                  <div className="panel-header">
-                    <div>
-                      <h2>Record Installation</h2>
-                      <p>Enter how many {electrician.name} installed. This removes them from their stock.</p>
-                    </div>
-                  </div>
-                  <form className="stack-form" onSubmit={onRecordInstall}>
-                    <label>
-                      Week ending (Sunday)
-                      <select value={installDate} onChange={(event) => setInstallDate(event.target.value)} required>
-                        {weekEndingOptions.map((week) => (
-                          <option value={week} key={week}>
-                            {formatWeekEnding(week)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="qty-list">
-                      {activeProducts.map((product) => (
-                        <div className="qty-row" key={product.id}>
-                          <div className="qty-name">
-                            <strong>{product.name}</strong>
-                            <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
-                          </div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="0"
-                            value={installQty[product.id] ?? ""}
-                            onChange={(event) => setInstallQty({ ...installQty, [product.id]: event.target.value })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <label>
-                      Reference / job
-                      <input
-                        value={installReference}
-                        onChange={(event) => setInstallReference(event.target.value)}
-                        placeholder="Job number"
-                      />
-                    </label>
-                    <button className="primary-button" type="submit" disabled={submitting}>
-                      <PackageCheck size={18} />
-                      Record installation
-                    </button>
-                  </form>
-                </section>
-              </div>
-
-              <section className="panel">
-                <div className="panel-header">
-                  <div>
-                    <h2>Request Stock — Pickup Slip</h2>
-                    <p>
-                      {pickupMode === "Delivery"
-                        ? "Asks Specific Freight (Damien Doyle) to pack the stock and send dimensions so you can post it out"
-                        : "Emails a Stock Release Request to Specific Freight (Damien Doyle) to arrange pickup"}
-                      , CC {pickupConfig.freight.cc.join(", ")}
-                      {electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"}.
-                    </p>
+                  ))}
+                  <div className="el-stat">
+                    <span>Faulty held</span>
+                    <strong className="soft">{totalFaulty.toLocaleString()}</strong>
                   </div>
                 </div>
-                <div className="stack-form">
-                  <div className="seg-field">
-                    <span className="seg-label">Fulfilment</span>
-                    <div className="segmented" role="group" aria-label="Fulfilment method">
-                      <button
-                        type="button"
-                        className={pickupMode === "Pickup" ? "active" : ""}
-                        onClick={() => setPickupMode("Pickup")}
-                      >
-                        Pickup
-                      </button>
-                      <button
-                        type="button"
-                        className={pickupMode === "Delivery" ? "active" : ""}
-                        onClick={() => setPickupMode("Delivery")}
-                      >
-                        Delivery
-                      </button>
-                    </div>
-                  </div>
-                  <label>
-                    Requested release date
-                    <input
-                      type="date"
-                      value={pickupReleaseDate}
-                      onChange={(event) => setPickupReleaseDate(event.target.value)}
-                      required
-                    />
-                  </label>
-                  <div className="qty-list">
-                    {activeProducts.map((product) => {
-                      const size = product.sku ? pickupConfig.cartonSizeBySku[product.sku] : undefined;
-                      const qty = Number(pickupQty[product.id]);
-                      const cartons = Number.isInteger(qty) && qty > 0 ? cartonsForSku(product.sku, qty) : "";
-                      return (
-                        <div className="qty-row" key={product.id}>
-                          <div className="qty-name">
-                            <strong>{product.name}</strong>
-                            <span>
-                              {size ? `${size} per carton` : "carton size not set"}
-                              {cartons ? ` · ${cartons} carton${cartons === "1" ? "" : "s"}` : ""}
-                            </span>
-                          </div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            placeholder="0"
-                            value={pickupQty[product.id] ?? ""}
-                            onChange={(event) => setPickupQty({ ...pickupQty, [product.id]: event.target.value })}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <label>
-                    Notes
-                    <textarea
-                      value={pickupNotes}
-                      onChange={(event) => setPickupNotes(event.target.value)}
-                      rows={2}
-                      placeholder="e.g. Pickup scheduled for Monday"
-                    />
-                  </label>
-                  <div className="form-actions">
-                    <button className="secondary-button" type="button" onClick={onDownloadPickupSlip} disabled={sendingSlip}>
-                      <Download size={18} />
-                      Download PDF
-                    </button>
-                    <button className="primary-button" type="button" onClick={onSendPickupSlip} disabled={sendingSlip}>
-                      <Truck size={18} />
-                      {sendingSlip ? "Sending…" : "Email to Specific Freight"}
-                    </button>
-                  </div>
-                </div>
-              </section>
 
-              <section className="panel">
-                <div className="panel-header">
-                  <div>
-                    <h2>Record Stock Loss</h2>
-                    <p>
-                      Removes lost stock from {electrician.name} and keeps a record of whether they were charged.
-                      {losses.length ? ` ${lostTotal.toLocaleString()} lost so far, $${chargedTotal.toLocaleString()} charged.` : ""}
-                    </p>
-                  </div>
+                <div className="el-tabbar" role="tablist">
+                  {([
+                    ["overview", "Overview"],
+                    ["give", "Give stock"],
+                    ["install", "Install"],
+                    ["request", "Request stock"],
+                    ["loss", "Loss"],
+                    ["history", "History"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === key}
+                      className={`el-tab${tab === key ? " active" : ""}`}
+                      onClick={() => setTab(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <form className="stack-form" onSubmit={onRecordLoss}>
-                  <label>
-                    Date
-                    <input type="date" value={lossDate} onChange={(event) => setLossDate(event.target.value)} required />
-                  </label>
-                  <div className="qty-list">
-                    {activeProducts.map((product) => (
-                      <div className="qty-row" key={product.id}>
-                        <div className="qty-name">
-                          <strong>{product.name}</strong>
-                          <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
-                        </div>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="0"
-                          value={lossQty[product.id] ?? ""}
-                          onChange={(event) => setLossQty({ ...lossQty, [product.id]: event.target.value })}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="form-row">
-                    <div className="segmented-control" role="group" aria-label="Charged status">
-                      <button className={lossCharged ? "" : "active"} type="button" onClick={() => setLossCharged(false)}>
-                        Not charged
-                      </button>
-                      <button className={lossCharged ? "active" : ""} type="button" onClick={() => setLossCharged(true)}>
-                        Charged
-                      </button>
-                    </div>
-                    <label>
-                      Amount charged ($)
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={lossAmount}
-                        onChange={(event) => setLossAmount(event.target.value)}
-                        disabled={!lossCharged}
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Notes
-                    <textarea
-                      value={lossNotes}
-                      onChange={(event) => setLossNotes(event.target.value)}
-                      rows={2}
-                      placeholder="What was lost and how"
-                    />
-                  </label>
-                  <button className="primary-button" type="submit" disabled={submitting}>
-                    <AlertTriangle size={18} />
-                    Record loss
-                  </button>
-                </form>
 
-                {losses.length ? (
-                  <>
-                    <p className="list-label">Recorded losses</p>
-                    <div className="responsive-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Product</th>
-                            <th>Qty</th>
-                            <th>Charged</th>
-                            <th>Notes</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {losses.map((movement) => (
-                            <tr key={movement.id}>
-                              <td>{formatDate(movement.movement_date)}</td>
-                              <td>{productName(movement.product_id)}</td>
-                              <td>{movement.quantity.toLocaleString()}</td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className={`status-chip ${movement.charged ? "ok" : "attention"} chip-button`}
-                                  onClick={() => onToggleLossCharged(movement)}
-                                  title="Click to change"
-                                >
-                                  {movement.charged
-                                    ? `Charged${movement.charge_amount ? ` $${movement.charge_amount.toLocaleString()}` : ""}`
-                                    : "Not charged"}
-                                </button>
-                              </td>
-                              <td>{movement.notes}</td>
-                              <td className="row-action">
-                                <button
-                                  className="icon-button danger"
-                                  type="button"
-                                  title="Delete loss"
-                                  aria-label="Delete loss"
-                                  disabled={submitting}
-                                  onClick={() => onDeleteMovement(movement.id)}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </td>
+                <div className="el-tabbody">
+                  {tab === "overview" ? (
+                    <>
+                      <p className="el-intro">Current stock held by {electrician.name}. Pick an action tab above to move stock.</p>
+                      <div className="responsive-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Product</th>
+                              <th>On hand (good)</th>
+                              <th>Faulty held</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                ) : null}
-              </section>
+                          </thead>
+                          <tbody>
+                            {activeProducts.map((product) => (
+                              <tr key={product.id}>
+                                <td>
+                                  <strong>{product.name}</strong>
+                                  <span>{product.sku}</span>
+                                </td>
+                                <td>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                                <td>{getBalance(faultyBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : null}
 
-              <section className="panel">
-                <div className="panel-header">
-                  <div>
-                    <h2>Movement History</h2>
-                    <p>{history.length.toLocaleString()} movements for {electrician.name}</p>
-                  </div>
-                </div>
-                <div className="responsive-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>In</th>
-                        <th>Out</th>
-                        <th>Reference</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((movement) => {
-                        const isIn = movement.to_holder_id === electrician.id;
-                        return (
-                          <tr key={movement.id}>
-                            <td>{formatDate(movement.movement_date)}</td>
-                            <td>
-                              <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                                {movementLabels[movement.movement_type]}
-                              </span>
-                              <span>{conditionLabels[getMovementCondition(movement)]}</span>
-                            </td>
-                            <td>{productName(movement.product_id)}</td>
-                            <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
-                            <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
-                            <td>
-                              <LinkifiedText
-                                value={[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
-                                  .filter(Boolean)
-                                  .join(" / ")}
+                  {tab === "give" ? (
+                    <>
+                      <p className="el-intro">Send several products to {electrician.name} in one go.</p>
+                      <form className="stack-form" onSubmit={onGiveStock}>
+                        <div className="form-row">
+                          <label>
+                            Date
+                            <input type="date" value={giveDate} onChange={(event) => setGiveDate(event.target.value)} required />
+                          </label>
+                          <label>
+                            From warehouse
+                            <select value={giveWarehouseId} onChange={(event) => setGiveWarehouseId(event.target.value)} required>
+                              {warehouses.map((holder) => (
+                                <option value={holder.id} key={holder.id}>
+                                  {holder.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="qty-list">
+                          {activeProducts.map((product) => (
+                            <div className="qty-row" key={product.id}>
+                              <div className="qty-name">
+                                <strong>{product.name}</strong>
+                                <span>{getBalance(goodBalanceMap, giveWarehouseId, product.id).toLocaleString()} in warehouse</span>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="0"
+                                value={giveQty[product.id] ?? ""}
+                                onChange={(event) => setGiveQty({ ...giveQty, [product.id]: event.target.value })}
                               />
-                              {movement.tracking ? " " : ""}
-                              <TrackingLink tracking={movement.tracking} />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {history.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="muted">
-                            No movements yet for this electrician.
-                          </td>
-                        </tr>
+                            </div>
+                          ))}
+                        </div>
+                        <label>
+                          Reference
+                          <input
+                            value={giveReference}
+                            onChange={(event) => setGiveReference(event.target.value)}
+                            placeholder="Pickup slip"
+                          />
+                        </label>
+                        <div className="el-formfoot">
+                          <button className="primary-button" type="submit" disabled={submitting || !warehouses.length}>
+                            <Truck size={18} />
+                            Give stock
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  ) : null}
+
+                  {tab === "install" ? (
+                    <>
+                      <p className="el-intro">Enter how many {electrician.name} installed. This removes them from their stock.</p>
+                      <form className="stack-form" onSubmit={onRecordInstall}>
+                        <label>
+                          Week ending (Sunday)
+                          <select value={installDate} onChange={(event) => setInstallDate(event.target.value)} required>
+                            {weekEndingOptions.map((week) => (
+                              <option value={week} key={week}>
+                                {formatWeekEnding(week)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="qty-list">
+                          {activeProducts.map((product) => (
+                            <div className="qty-row" key={product.id}>
+                              <div className="qty-name">
+                                <strong>{product.name}</strong>
+                                <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="0"
+                                value={installQty[product.id] ?? ""}
+                                onChange={(event) => setInstallQty({ ...installQty, [product.id]: event.target.value })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <label>
+                          Reference / job
+                          <input
+                            value={installReference}
+                            onChange={(event) => setInstallReference(event.target.value)}
+                            placeholder="Job number"
+                          />
+                        </label>
+                        <div className="el-formfoot">
+                          <button className="primary-button" type="submit" disabled={submitting}>
+                            <PackageCheck size={18} />
+                            Record installation
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  ) : null}
+
+                  {tab === "request" ? (
+                    <>
+                      <p className="el-intro">
+                        {pickupMode === "Delivery"
+                          ? "Asks Specific Freight (Damien Doyle) to pack the stock and send dimensions so you can post it out"
+                          : "Emails a Stock Release Request to Specific Freight (Damien Doyle) to arrange pickup"}
+                        , CC {pickupConfig.freight.cc.join(", ")}
+                        {electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"}.
+                      </p>
+                      <div className="stack-form">
+                        <div className="seg-field">
+                          <span className="seg-label">Fulfilment</span>
+                          <div className="segmented" role="group" aria-label="Fulfilment method">
+                            <button
+                              type="button"
+                              className={pickupMode === "Pickup" ? "active" : ""}
+                              onClick={() => setPickupMode("Pickup")}
+                            >
+                              Pickup
+                            </button>
+                            <button
+                              type="button"
+                              className={pickupMode === "Delivery" ? "active" : ""}
+                              onClick={() => setPickupMode("Delivery")}
+                            >
+                              Delivery
+                            </button>
+                          </div>
+                        </div>
+                        <label>
+                          Requested release date
+                          <input
+                            type="date"
+                            value={pickupReleaseDate}
+                            onChange={(event) => setPickupReleaseDate(event.target.value)}
+                            required
+                          />
+                        </label>
+                        <div className="qty-list">
+                          {activeProducts.map((product) => {
+                            const size = product.sku ? pickupConfig.cartonSizeBySku[product.sku] : undefined;
+                            const qty = Number(pickupQty[product.id]);
+                            const cartons = Number.isInteger(qty) && qty > 0 ? cartonsForSku(product.sku, qty) : "";
+                            return (
+                              <div className="qty-row" key={product.id}>
+                                <div className="qty-name">
+                                  <strong>{product.name}</strong>
+                                  <span>
+                                    {size ? `${size} per carton` : "carton size not set"}
+                                    {cartons ? ` · ${cartons} carton${cartons === "1" ? "" : "s"}` : ""}
+                                  </span>
+                                </div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  placeholder="0"
+                                  value={pickupQty[product.id] ?? ""}
+                                  onChange={(event) => setPickupQty({ ...pickupQty, [product.id]: event.target.value })}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <label>
+                          Notes
+                          <textarea
+                            value={pickupNotes}
+                            onChange={(event) => setPickupNotes(event.target.value)}
+                            rows={2}
+                            placeholder="e.g. Pickup scheduled for Monday"
+                          />
+                        </label>
+                        <div className="form-actions">
+                          <button className="secondary-button" type="button" onClick={onDownloadPickupSlip} disabled={sendingSlip}>
+                            <Download size={18} />
+                            Download PDF
+                          </button>
+                          <button className="primary-button" type="button" onClick={onSendPickupSlip} disabled={sendingSlip}>
+                            <Truck size={18} />
+                            {sendingSlip ? "Sending…" : "Email to Specific Freight"}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {tab === "loss" ? (
+                    <>
+                      <p className="el-intro">
+                        Removes lost stock from {electrician.name} and keeps a record of whether they were charged.
+                        {losses.length ? ` ${lostTotal.toLocaleString()} lost so far, $${chargedTotal.toLocaleString()} charged.` : ""}
+                      </p>
+                      <form className="stack-form" onSubmit={onRecordLoss}>
+                        <label>
+                          Date
+                          <input type="date" value={lossDate} onChange={(event) => setLossDate(event.target.value)} required />
+                        </label>
+                        <div className="qty-list">
+                          {activeProducts.map((product) => (
+                            <div className="qty-row" key={product.id}>
+                              <div className="qty-name">
+                                <strong>{product.name}</strong>
+                                <span>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand</span>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="0"
+                                value={lossQty[product.id] ?? ""}
+                                onChange={(event) => setLossQty({ ...lossQty, [product.id]: event.target.value })}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="form-row">
+                          <div className="segmented-control" role="group" aria-label="Charged status">
+                            <button className={lossCharged ? "" : "active"} type="button" onClick={() => setLossCharged(false)}>
+                              Not charged
+                            </button>
+                            <button className={lossCharged ? "active" : ""} type="button" onClick={() => setLossCharged(true)}>
+                              Charged
+                            </button>
+                          </div>
+                          <label>
+                            Amount charged ($)
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={lossAmount}
+                              onChange={(event) => setLossAmount(event.target.value)}
+                              disabled={!lossCharged}
+                            />
+                          </label>
+                        </div>
+                        <label>
+                          Notes
+                          <textarea
+                            value={lossNotes}
+                            onChange={(event) => setLossNotes(event.target.value)}
+                            rows={2}
+                            placeholder="What was lost and how"
+                          />
+                        </label>
+                        <div className="el-formfoot">
+                          <button className="primary-button" type="submit" disabled={submitting}>
+                            <AlertTriangle size={18} />
+                            Record loss
+                          </button>
+                        </div>
+                      </form>
+
+                      {losses.length ? (
+                        <>
+                          <p className="list-label">Recorded losses</p>
+                          <div className="responsive-table">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Product</th>
+                                  <th>Qty</th>
+                                  <th>Charged</th>
+                                  <th>Notes</th>
+                                  <th></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {losses.map((movement) => (
+                                  <tr key={movement.id}>
+                                    <td>{formatDate(movement.movement_date)}</td>
+                                    <td>{productName(movement.product_id)}</td>
+                                    <td>{movement.quantity.toLocaleString()}</td>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className={`status-chip ${movement.charged ? "ok" : "attention"} chip-button`}
+                                        onClick={() => onToggleLossCharged(movement)}
+                                        title="Click to change"
+                                      >
+                                        {movement.charged
+                                          ? `Charged${movement.charge_amount ? ` $${movement.charge_amount.toLocaleString()}` : ""}`
+                                          : "Not charged"}
+                                      </button>
+                                    </td>
+                                    <td>{movement.notes}</td>
+                                    <td className="row-action">
+                                      <button
+                                        className="icon-button danger"
+                                        type="button"
+                                        title="Delete loss"
+                                        aria-label="Delete loss"
+                                        disabled={submitting}
+                                        onClick={() => onDeleteMovement(movement.id)}
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       ) : null}
-                    </tbody>
-                  </table>
+                    </>
+                  ) : null}
+
+                  {tab === "history" ? (
+                    <>
+                      <p className="el-intro">{history.length.toLocaleString()} movements for {electrician.name}.</p>
+                      <div className="responsive-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Type</th>
+                              <th>Product</th>
+                              <th>In</th>
+                              <th>Out</th>
+                              <th>Reference</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map((movement) => {
+                              const isIn = movement.to_holder_id === electrician.id;
+                              return (
+                                <tr key={movement.id}>
+                                  <td>{formatDate(movement.movement_date)}</td>
+                                  <td>
+                                    <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                                      {movementLabels[movement.movement_type]}
+                                    </span>
+                                    <span>{conditionLabels[getMovementCondition(movement)]}</span>
+                                  </td>
+                                  <td>{productName(movement.product_id)}</td>
+                                  <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
+                                  <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
+                                  <td>
+                                    <LinkifiedText
+                                      value={[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
+                                        .filter(Boolean)
+                                        .join(" / ")}
+                                    />
+                                    {movement.tracking ? " " : ""}
+                                    <TrackingLink tracking={movement.tracking} />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {history.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="muted">
+                                  No movements yet for this electrician.
+                                </td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </section>
 

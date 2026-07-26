@@ -3209,3 +3209,236 @@ html {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   WISECSS11 — Electricians tab: master-detail + tabbed actions
+   ============================================================ */
+.elec2-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+/* ---- roster (master) ---- */
+.el-roster {
+  position: sticky;
+  top: 18px;
+  padding: 0;
+  overflow: hidden;
+}
+.el-roster-head {
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.el-roster-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.el-roster-head h2 { margin: 0; font-size: 15px; }
+.el-roster-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.secondary-button.sm { padding: 7px 12px; font-size: 13px; }
+.el-search {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 8px 11px;
+  color: var(--muted);
+}
+.el-search input {
+  border: 0;
+  outline: 0;
+  width: 100%;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.el-roster-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 64vh;
+  overflow-y: auto;
+}
+.el-rgroup {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 12px 10px 6px;
+}
+.el-rrow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.el-rrow:hover { background: var(--soft); }
+.el-rrow.active { background: var(--accent-soft); border-color: #cdeab0; }
+.el-av {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--soft);
+  color: var(--primary-deep);
+}
+.el-rrow.active .el-av { background: #fff; }
+.el-rrow.zero .el-av { background: #f0f1ee; color: var(--muted); }
+.el-who { min-width: 0; }
+.el-nm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 650;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.el-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary-deep); flex: none; }
+.el-rrow.zero .el-dot { background: #c4ccbe; }
+.el-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+.el-chip {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--soft);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-variant-numeric: tabular-nums;
+}
+.el-rrow.zero .el-chip { color: var(--muted); }
+
+/* ---- detail card ---- */
+.el-card { padding: 0; overflow: hidden; }
+.el-dhead {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 22px 18px;
+}
+.el-bigav {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--primary);
+  font-weight: 800;
+  font-size: 19px;
+}
+.el-dwho { min-width: 0; flex: 1; }
+.el-dwho h2 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+.el-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }
+.el-tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.el-dactions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.el-statstrip {
+  display: flex;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+}
+.el-stat {
+  flex: 1 1 0;
+  min-width: 120px;
+  padding: 14px 22px;
+  border-right: 1px solid var(--line);
+}
+.el-stat.hero { flex-grow: 1.2; }
+.el-stat:last-child { border-right: 0; }
+.el-stat span {
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.el-stat strong {
+  display: block;
+  font-size: 25px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+.el-stat.hero strong { color: var(--primary-deep); }
+.el-stat strong.soft { color: var(--muted); font-weight: 700; }
+
+.el-tabbar {
+  display: flex;
+  gap: 3px;
+  padding: 6px;
+  margin: 16px 22px 0;
+  background: var(--soft);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+.el-tab {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 9px 15px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.el-tab:hover { color: var(--ink); }
+.el-tab.active {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 33, 26, 0.1);
+}
+.el-tabbody { padding: 20px 22px 24px; }
+.el-intro { margin: 0 0 16px; font-size: 13.5px; color: var(--muted); }
+.el-tabbody .stack-form > label:last-of-type { margin-bottom: 0; }
+.el-formfoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+@media (max-width: 1080px) {
+  .elec2-grid { grid-template-columns: 1fr; }
+  .el-roster { position: static; }
+  .el-dhead { flex-wrap: wrap; }
+  .el-dactions { justify-content: flex-start; }
+  .el-statstrip { grid-template-columns: 1fr 1fr; }
+  .el-stat { border-right: 0; border-bottom: 1px solid var(--line); }
+}
