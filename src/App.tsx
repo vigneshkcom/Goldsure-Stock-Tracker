@@ -47,7 +47,7 @@ import {
   type StockReportInput,
 } from "./pickupSlip";
 import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
-import { formatJobDateTime, statusCardClass, statusChipClass } from "./warranty";
+import { formatJobDateTime, statusCardClass, statusChipClass, statusLabels } from "./warranty";
 import WarrantyTracker from "./WarrantyTracker";
 import type {
   BalanceRow,
@@ -3064,6 +3064,7 @@ function WarrantyView({
 }) {
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState("");
+  const [warrantyTab, setWarrantyTab] = useState<"overview" | "post" | "change" | "pack" | "notes" | "new">("overview");
   const [jobsPage, setJobsPage] = useState(1);
   const JOBS_PER_PAGE = 5;
   const term = searchTerm.trim().toLowerCase();
@@ -3086,6 +3087,29 @@ function WarrantyView({
   const postedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "customer_post", "good"), 0);
   const installedTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "install", "good"), 0);
   const faultyTotal = jobs.reduce((total, job) => total + sumJobMovement(job, data.movements, "faulty_collect", "faulty"), 0);
+
+  const jobPosted = selectedJob ? sumJobMovement(selectedJob, data.movements, "customer_post", "good") : 0;
+  const jobInstalled = selectedJob ? sumJobMovement(selectedJob, data.movements, "install", "good") : 0;
+  const jobFaulty = selectedJob ? sumJobMovement(selectedJob, data.movements, "faulty_collect", "faulty") : 0;
+  const selectedType: WarrantyJobType = selectedJob?.job_type ?? "warranty";
+  const openJob = (id: string) => {
+    setSelectedJobId(id);
+    setWarrantyTab("overview");
+  };
+  const jobTabList: readonly (readonly [string, string])[] = selectedJob
+    ? ([
+        ["overview", "Overview"],
+        ["post", "Post stock"],
+        ["change", "Changeover"],
+        ["pack", "Request pack"],
+        ["notes", "Notes"],
+      ] as const)
+    : ([
+        ["new", "Create job"],
+        ["pack", "Request pack"],
+      ] as const);
+  const validTabKeys = jobTabList.map(([key]) => key);
+  const activeWTab = validTabKeys.includes(warrantyTab) ? warrantyTab : validTabKeys[0];
 
   return (
     <section className="warranty-stack">
@@ -3128,279 +3152,98 @@ function WarrantyView({
         </div>
       </div>
 
-      <section className="warranty-grid">
-        <section className="panel">
-          <div className="panel-header">
-            <span className="head-ic">
-              <ClipboardPlus size={20} />
-            </span>
-            <div>
-              <h2>Create Job</h2>
-              <p>Add a new warranty or one-off post job.</p>
-            </div>
-          </div>
-
-          <form className="warranty-form" onSubmit={onCreateJob}>
-            <label>
-              Type
-              <select value={jobType} onChange={(event) => setJobType(event.target.value as WarrantyJobType)}>
-                <option value="warranty">Warranty</option>
-                <option value="oneoff">One-Off Post</option>
-              </select>
-            </label>
-            <label>
-              Job number
-              <input
-                value={jobNumber}
-                onChange={(event) => setJobNumber(event.target.value)}
-                placeholder="Enter job number"
-                required
-              />
-            </label>
-            <label>
-              Customer
-              <input
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                placeholder="Enter customer name"
-                required
-              />
-            </label>
-            <label>
-              Phone
-              <input
-                value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
-                placeholder="Enter phone number"
-              />
-            </label>
-            <label className="full-width">
-              Address
-              <input
-                value={customerAddress}
-                onChange={(event) => setCustomerAddress(event.target.value)}
-                placeholder="Enter full address"
-              />
-            </label>
-            <label className="full-width">
-              Notes
-              <textarea
-                value={jobNotes}
-                onChange={(event) => setJobNotes(event.target.value)}
-                rows={2}
-                placeholder="Add notes (optional)"
-              />
-            </label>
-            <button className="primary-button full-width" type="submit" disabled={submitting}>
-              <Plus size={18} />
-              Create job
-            </button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <div className="panel-header ledger-header">
-            <span className="head-ic">
-              <ListChecks size={20} />
-            </span>
-            <div>
-              <h2>Job List</h2>
-              <p>
-                {filteredJobs.length} visible job{filteredJobs.length === 1 ? "" : "s"}
-              </p>
-            </div>
-            <div className="ledger-tools">
-              <label className="search-box">
-                <Search size={17} />
-                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search jobs" />
-              </label>
-              <button className="secondary-button" type="button" onClick={onOpenTracker}>
-                <ClipboardList size={17} />
-                Open full tracker
-              </button>
-            </div>
-          </div>
-
-          <div className="jobs-selectbar">
-            <label className="select-all">
-              <input
-                type="checkbox"
-                checked={allJobsSelected}
-                onChange={(event) => onSelectAllJobs(filteredJobIds, event.target.checked)}
-              />
-              Select all
-            </label>
-            {selectedJobIds.length > 0 ? (
-              <button className="danger-button sm" type="button" onClick={() => onDeleteJobs(selectedJobIds)}>
-                <Trash2 size={15} />
-                Delete {selectedJobIds.length} selected
-              </button>
-            ) : (
-              <span className="muted">Tick jobs to bulk-delete</span>
-            )}
-          </div>
-
-          <div className="responsive-table">
-            <div className="jobs-table" role="table" aria-label="Warranty jobs">
-              <div className="jobs-head" role="row">
-                <span aria-hidden="true" />
-                <span role="columnheader">Job</span>
-                <span role="columnheader">Customer / Type</span>
-                <span role="columnheader">Summary</span>
-                <span role="columnheader">Status</span>
+      <div className="elec2-grid">
+        <aside className="panel el-roster">
+          <div className="el-roster-head">
+            <div className="el-roster-top">
+              <div>
+                <h2>Jobs</h2>
+                <p>{filteredJobs.length} visible job{filteredJobs.length === 1 ? "" : "s"}</p>
               </div>
-              {pageJobs.map((job) => {
-                const posted = sumJobMovement(job, data.movements, "customer_post", "good");
-                const installed = sumJobMovement(job, data.movements, "install", "good");
-                const faulty = sumJobMovement(job, data.movements, "faulty_collect", "faulty");
-                const isActive = selectedJobId === job.id;
-                const rowType: WarrantyJobType = job.job_type ?? "warranty";
-                const isPicked = selectedJobIds.includes(job.id);
-                return (
-                  <div className="jobs-rowgroup" key={job.id}>
-                    <div
-                      className={`jobs-row ${statusCardClass[job.status]}${isActive ? " active" : ""}${isPicked ? " picked" : ""}`}
-                      role="row"
-                      tabIndex={0}
-                      onClick={() => setSelectedJobId(isActive ? "" : job.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelectedJobId(isActive ? "" : job.id);
-                        }
-                      }}
-                    >
-                      <label className="pick" onClick={(event) => event.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isPicked}
-                          onChange={() => onToggleJobSelect(job.id)}
-                          aria-label={`Select job ${job.job_number}`}
-                        />
-                      </label>
-                      <span className="jr-job">
-                        <strong>{job.job_number}</strong>
-                      </span>
-                      <span className="jr-cust">
-                        <span className="jr-name">{job.customer_name}</span>
-                        <em className={`type-badge ${rowType === "oneoff" ? "oneoff" : "warranty"}`}>
-                          {rowType === "oneoff" ? "One-Off" : "Warranty"}
-                        </em>
-                      </span>
-                      <span className="jr-sum">
-                        Posted {posted} <i>|</i> Installed {installed} <i>|</i> Faulty {faulty}
-                      </span>
-                      <span className="jr-status">
-                        <select
-                          className={`job-status-select status-chip ${statusChipClass[job.status]}`}
-                          value={job.status}
-                          aria-label={`Status for job ${job.job_number}`}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            event.stopPropagation();
-                            onChangeJobStatus(job.id, event.target.value as WarrantyJobStatus);
-                          }}
-                        >
-                          <option value="open">Open</option>
-                          <option value="posted">Posted</option>
-                          <option value="completed">Replaced</option>
-                          <option value="cancelled">Closed</option>
-                        </select>
-                      </span>
-                    </div>
-                    {isActive ? (
-                      <div className="job-expand jobs-expand" onClick={(event) => event.stopPropagation()}>
-                      <div>
-                        <span>Created</span>
-                        <strong>{formatJobDateTime(job.created_at)}</strong>
-                      </div>
-                      <div>
-                        <span>Last action</span>
-                        <strong>{formatJobDateTime(job.updated_at ?? job.created_at)}</strong>
-                      </div>
-                      <div>
-                        <span>Address</span>
-                        <strong>{job.customer_address || "Not entered"}</strong>
-                      </div>
-                      <div>
-                        <span>Phone</span>
-                        <strong>{job.customer_phone || "Not entered"}</strong>
-                      </div>
-                      <div>
-                        <span>Posted to customer</span>
-                        <strong>{describeMovementProducts(job, data.movements, data.products, "customer_post") || "None"}</strong>
-                      </div>
-                      <div>
-                        <span>Installed</span>
-                        <strong>{describeMovementProducts(job, data.movements, data.products, "install") || "None"}</strong>
-                      </div>
-                      <div>
-                        <span>Replaced (faulty returned)</span>
-                        <strong>{describeMovementProducts(job, data.movements, data.products, "faulty_collect") || "None"}</strong>
-                      </div>
-                      <div className="full-width job-notes">
-                        <div className="job-notes-head">
-                          <span>Notes</span>
-                          {editingNotesId === job.id ? (
-                            <span className="job-notes-tools">
-                              <button
-                                className="icon-text-button"
-                                type="button"
-                                onClick={() => {
-                                  onSaveJobNotes(job.id, draftNotes);
-                                  setEditingNotesId(null);
-                                }}
-                              >
-                                <Check size={15} /> Save
-                              </button>
-                              <button className="icon-text-button" type="button" onClick={() => setEditingNotesId(null)}>
-                                <X size={15} /> Cancel
-                              </button>
-                            </span>
-                          ) : (
-                            <button
-                              className="icon-text-button"
-                              type="button"
-                              onClick={() => {
-                                setEditingNotesId(job.id);
-                                setDraftNotes(job.notes ?? "");
-                              }}
-                            >
-                              <Pencil size={15} /> Edit
-                            </button>
-                          )}
-                        </div>
-                        {editingNotesId === job.id ? (
-                          <textarea
-                            rows={3}
-                            value={draftNotes}
-                            onChange={(event) => setDraftNotes(event.target.value)}
-                            autoFocus
-                          />
-                        ) : (
-                          <strong className={job.notes ? "" : "muted"}>{job.notes || "No notes yet."}</strong>
-                        )}
-                      </div>
-                      <div className="full-width job-row-actions">
-                        <button className="danger-button ghost" type="button" onClick={() => onDeleteJobs([job.id])}>
-                          <Trash2 size={15} />
-                          Delete job
-                        </button>
-                      </div>
-                    </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {pageJobs.length === 0 ? <div className="jobs-empty muted">No jobs match your search.</div> : null}
+              <button
+                className="primary-button sm"
+                type="button"
+                onClick={() => {
+                  setSelectedJobId("");
+                  setWarrantyTab("new");
+                }}
+              >
+                <Plus size={15} />
+                New job
+              </button>
+            </div>
+            <label className="el-search">
+              <Search size={16} />
+              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search jobs" />
+            </label>
+            <div className="wj-selectbar">
+              <label className="select-all">
+                <input
+                  type="checkbox"
+                  checked={allJobsSelected}
+                  onChange={(event) => onSelectAllJobs(filteredJobIds, event.target.checked)}
+                />
+                Select all
+              </label>
+              {selectedJobIds.length > 0 ? (
+                <button className="danger-button sm" type="button" onClick={() => onDeleteJobs(selectedJobIds)}>
+                  <Trash2 size={14} />
+                  Delete {selectedJobIds.length}
+                </button>
+              ) : (
+                <button className="linklike" type="button" onClick={onOpenTracker}>
+                  Full tracker
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="pager">
+          <div className="el-roster-list wj-list">
+            {pageJobs.map((job) => {
+              const rowType: WarrantyJobType = job.job_type ?? "warranty";
+              const isActive = selectedJobId === job.id;
+              const isPicked = selectedJobIds.includes(job.id);
+              return (
+                <div
+                  className={`wj-row ${statusCardClass[job.status]}${isActive ? " active" : ""}${isPicked ? " picked" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openJob(isActive ? "" : job.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openJob(isActive ? "" : job.id);
+                    }
+                  }}
+                  key={job.id}
+                >
+                  <label className="pick" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isPicked}
+                      onChange={() => onToggleJobSelect(job.id)}
+                      aria-label={`Select job ${job.job_number}`}
+                    />
+                  </label>
+                  <div className="wj-main">
+                    <div className="wj-top">
+                      <strong>{job.job_number}</strong>
+                      <em className={`type-badge ${rowType === "oneoff" ? "oneoff" : "warranty"}`}>
+                        {rowType === "oneoff" ? "One-Off" : "Warranty"}
+                      </em>
+                    </div>
+                    <span className="wj-cust">{job.customer_name}</span>
+                  </div>
+                  <span className={`status-chip ${statusChipClass[job.status]} wj-chip`}>{statusLabels[job.status]}</span>
+                </div>
+              );
+            })}
+            {pageJobs.length === 0 ? <p className="muted" style={{ padding: "8px 4px" }}>No jobs match your search.</p> : null}
+          </div>
+
+          <div className="pager wj-pager">
             <span className="pager-info">
-              {filteredJobs.length
-                ? `Showing ${firstShown} to ${lastShown} of ${filteredJobs.length} jobs`
-                : "No jobs to show"}
+              {filteredJobs.length ? `${firstShown}–${lastShown} of ${filteredJobs.length}` : "No jobs"}
             </span>
             <div className="pager-controls">
               <button
@@ -3409,7 +3252,7 @@ function WarrantyView({
                 disabled={currentPage <= 1}
                 onClick={() => setJobsPage(currentPage - 1)}
               >
-                Previous
+                Prev
               </button>
               {Array.from({ length: pageCount }, (_, index) => index + 1).map((n) => (
                 <button
@@ -3432,197 +3275,400 @@ function WarrantyView({
               </button>
             </div>
           </div>
-        </section>
-      </section>
+        </aside>
 
-      {selectedJob ? (
-        <section className="warranty-grid">
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Post Stock To Customer</h2>
-                <p>
-                  {selectedJob.job_number} — {selectedJob.customer_name}. Moves good stock out of warehouse and links it to
-                  this job.
-                </p>
-              </div>
-            </div>
-            <form className="warranty-form" onSubmit={onPostStock}>
-              <label>
-                Date
-                <input type="date" value={warrantyDate} onChange={(event) => setWarrantyDate(event.target.value)} required />
-              </label>
-              <label>
-                Warehouse
-                <select value={postWarehouseId} onChange={(event) => setPostWarehouseId(event.target.value)} required>
-                  {warehouses.map((holder) => (
-                    <option value={holder.id} key={holder.id}>
-                      {holder.name} ({getBalance(goodBalanceMap, holder.id, postProductId)} good)
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Product
-                <select value={postProductId} onChange={(event) => setPostProductId(event.target.value)} required>
-                  {activeProducts.map((product) => (
-                    <option value={product.id} key={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Quantity
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={postQuantity}
-                  onChange={(event) => setPostQuantity(event.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Reference
-                <input value={postReference} onChange={(event) => setPostReference(event.target.value)} placeholder="AusPost / slip" />
-              </label>
-              <label>
-                Tracking
-                <input value={postTracking} onChange={(event) => setPostTracking(event.target.value)} />
-              </label>
-              <button className="primary-button full-width" type="submit" disabled={submitting || !warehouses.length}>
-                <Truck size={18} />
-                Save customer posting
-              </button>
-            </form>
-          </section>
-
-          <section className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Record Electrician Changeover</h2>
-                <p>
-                  {selectedJob.job_number} — {selectedJob.customer_name}. Good stock is installed; faulty stock is added to
-                  the electrician.
-                </p>
-              </div>
-            </div>
-            <form className="warranty-form" onSubmit={onRecordChangeover}>
-              <label>
-                Electrician
-                <select value={changeTechnicianId} onChange={(event) => setChangeTechnicianId(event.target.value)} required>
-                  {technicians.map((holder) => (
-                    <option value={holder.id} key={holder.id}>
-                      {holder.name} ({getBalance(goodBalanceMap, holder.id, changeProductId)} good)
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Product
-                <select value={changeProductId} onChange={(event) => setChangeProductId(event.target.value)} required>
-                  {activeProducts.map((product) => (
-                    <option value={product.id} key={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Faulty count
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={changeQuantity}
-                  onChange={(event) => setChangeQuantity(event.target.value)}
-                  required
-                />
-              </label>
-              <div className="availability-note">
-                Good stock available: {getBalance(goodBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
-                <br />
-                Faulty held now: {getBalance(faultyBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
-              </div>
-              <label className="full-width">
-                Notes
-                <textarea value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} rows={3} />
-              </label>
-              <button className="primary-button full-width" type="submit" disabled={submitting || !technicians.length}>
-                <PackageCheck size={18} />
-                Save changeover
-              </button>
-            </form>
-          </section>
-        </section>
-      ) : (
-        <section className="empty-state">
-          <ClipboardList size={36} />
-          <h2>Click a job to post stock or record a changeover</h2>
-          <p className="muted">Create a job on the left, then select it from the list above.</p>
-        </section>
-      )}
-
-      <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Request Pack from Specific Freight</h2>
-              <p>
-                Emails Specific Freight (Damien Doyle, CC {pickupConfig.freight.cc.join(", ")}) to pack stock for posting to a
-                customer and send dimensions. Opens a preview you can edit, with a PDF download. Does not move stock.
-              </p>
-            </div>
-          </div>
-          <div className="stack-form">
-            <div className="warranty-form">
-              <label>
-                Request type
-                <select value={packType} onChange={(event) => setPackType(event.target.value as "warranty" | "oneoff")}>
-                  <option value="warranty">Warranty</option>
-                  <option value="oneoff">One-Off Post</option>
-                </select>
-              </label>
-              <label>
-                Reference
-                <input
-                  value={packReference}
-                  onChange={(event) => setPackReference(event.target.value)}
-                  placeholder={selectedJob ? `${selectedJob.job_number} (job)` : "Customer reference number"}
-                />
-              </label>
-            </div>
-            <div className="qty-list">
-              {activeProducts.map((product) => {
-                const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
-                return (
-                  <div className="qty-row" key={product.id}>
-                    <div className="qty-name">
-                      <strong>{product.name}</strong>
-                      <span>
-                        {freight ? `${getBalance(goodBalanceMap, freight.id, product.id).toLocaleString()} at Specific Freight` : " "}
+        <div className="el-detail">
+          <section className="panel el-card">
+            <div className="el-dhead">
+              <span className="el-bigav">
+                {selectedJob ? <ClipboardList size={22} /> : <ClipboardPlus size={22} />}
+              </span>
+              <div className="el-dwho">
+                <h2>{selectedJob ? selectedJob.job_number : activeWTab === "pack" ? "Request a pack" : "Create a job"}</h2>
+                <div className="el-tags">
+                  {selectedJob ? (
+                    <>
+                      <span className={`type-badge ${selectedType === "oneoff" ? "oneoff" : "warranty"}`}>
+                        {selectedType === "oneoff" ? "One-Off" : "Warranty"}
                       </span>
+                      <span className="el-tagchip">{selectedJob.customer_name}</span>
+                      {selectedJob.customer_phone ? (
+                        <span className="el-tagchip">
+                          <Phone size={13} />
+                          {selectedJob.customer_phone}
+                        </span>
+                      ) : null}
+                      <span className="el-tagchip">Created {formatJobDateTime(selectedJob.created_at)}</span>
+                    </>
+                  ) : (
+                    <span className="el-tagchip">No job selected</span>
+                  )}
+                </div>
+              </div>
+              {selectedJob ? (
+                <div className="el-dactions">
+                  <select
+                    className={`job-status-select status-chip ${statusChipClass[selectedJob.status]}`}
+                    value={selectedJob.status}
+                    aria-label={`Status for job ${selectedJob.job_number}`}
+                    onChange={(event) => onChangeJobStatus(selectedJob.id, event.target.value as WarrantyJobStatus)}
+                  >
+                    <option value="open">Open</option>
+                    <option value="posted">Posted</option>
+                    <option value="completed">Replaced</option>
+                    <option value="cancelled">Closed</option>
+                  </select>
+                  <button className="danger-button ghost sm" type="button" onClick={() => onDeleteJobs([selectedJob.id])}>
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedJob ? (
+              <div className="el-statstrip">
+                <div className="el-stat hero">
+                  <span>Posted</span>
+                  <strong>{jobPosted.toLocaleString()}</strong>
+                </div>
+                <div className="el-stat">
+                  <span>Installed</span>
+                  <strong>{jobInstalled.toLocaleString()}</strong>
+                </div>
+                <div className="el-stat">
+                  <span>Faulty held</span>
+                  <strong className="soft">{jobFaulty.toLocaleString()}</strong>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="el-tabbar" role="tablist">
+              {jobTabList.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeWTab === key}
+                  className={`el-tab${activeWTab === key ? " active" : ""}`}
+                  onClick={() => setWarrantyTab(key as typeof warrantyTab)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="el-tabbody">
+              {selectedJob && activeWTab === "overview" ? (
+                <>
+                  <p className="el-intro">Snapshot of {selectedJob.job_number} — {selectedJob.customer_name}.</p>
+                  <div className="wj-facts">
+                    <div>
+                      <span>Created</span>
+                      <strong>{formatJobDateTime(selectedJob.created_at)}</strong>
                     </div>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      placeholder="0"
-                      value={packQty[product.id] ?? ""}
-                      onChange={(event) => setPackQty({ ...packQty, [product.id]: event.target.value })}
-                    />
+                    <div>
+                      <span>Last action</span>
+                      <strong>{formatJobDateTime(selectedJob.updated_at ?? selectedJob.created_at)}</strong>
+                    </div>
+                    <div>
+                      <span>Address</span>
+                      <strong>{selectedJob.customer_address || "Not entered"}</strong>
+                    </div>
+                    <div>
+                      <span>Phone</span>
+                      <strong>{selectedJob.customer_phone || "Not entered"}</strong>
+                    </div>
+                    <div>
+                      <span>Posted to customer</span>
+                      <strong>{describeMovementProducts(selectedJob, data.movements, data.products, "customer_post") || "None"}</strong>
+                    </div>
+                    <div>
+                      <span>Installed</span>
+                      <strong>{describeMovementProducts(selectedJob, data.movements, data.products, "install") || "None"}</strong>
+                    </div>
+                    <div>
+                      <span>Replaced (faulty returned)</span>
+                      <strong>{describeMovementProducts(selectedJob, data.movements, data.products, "faulty_collect") || "None"}</strong>
+                    </div>
                   </div>
-                );
-              })}
+                </>
+              ) : null}
+
+              {selectedJob && activeWTab === "post" ? (
+                <>
+                  <p className="el-intro">
+                    Moves good stock out of a warehouse and links it to {selectedJob.job_number} — {selectedJob.customer_name}.
+                  </p>
+                  <form className="warranty-form" onSubmit={onPostStock}>
+                    <label>
+                      Date
+                      <input type="date" value={warrantyDate} onChange={(event) => setWarrantyDate(event.target.value)} required />
+                    </label>
+                    <label>
+                      Warehouse
+                      <select value={postWarehouseId} onChange={(event) => setPostWarehouseId(event.target.value)} required>
+                        {warehouses.map((holder) => (
+                          <option value={holder.id} key={holder.id}>
+                            {holder.name} ({getBalance(goodBalanceMap, holder.id, postProductId)} good)
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Product
+                      <select value={postProductId} onChange={(event) => setPostProductId(event.target.value)} required>
+                        {activeProducts.map((product) => (
+                          <option value={product.id} key={product.id}>
+                            {product.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Quantity
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={postQuantity}
+                        onChange={(event) => setPostQuantity(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Reference
+                      <input value={postReference} onChange={(event) => setPostReference(event.target.value)} placeholder="AusPost / slip" />
+                    </label>
+                    <label>
+                      Tracking
+                      <input value={postTracking} onChange={(event) => setPostTracking(event.target.value)} />
+                    </label>
+                    <button className="primary-button full-width" type="submit" disabled={submitting || !warehouses.length}>
+                      <Truck size={18} />
+                      Save customer posting
+                    </button>
+                  </form>
+                </>
+              ) : null}
+
+              {selectedJob && activeWTab === "change" ? (
+                <>
+                  <p className="el-intro">
+                    Good stock is installed; faulty stock is added to the electrician. For {selectedJob.job_number} — {selectedJob.customer_name}.
+                  </p>
+                  <form className="warranty-form" onSubmit={onRecordChangeover}>
+                    <label>
+                      Electrician
+                      <select value={changeTechnicianId} onChange={(event) => setChangeTechnicianId(event.target.value)} required>
+                        {technicians.map((holder) => (
+                          <option value={holder.id} key={holder.id}>
+                            {holder.name} ({getBalance(goodBalanceMap, holder.id, changeProductId)} good)
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Product
+                      <select value={changeProductId} onChange={(event) => setChangeProductId(event.target.value)} required>
+                        {activeProducts.map((product) => (
+                          <option value={product.id} key={product.id}>
+                            {product.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Faulty count
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={changeQuantity}
+                        onChange={(event) => setChangeQuantity(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <div className="availability-note">
+                      Good stock available: {getBalance(goodBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
+                      <br />
+                      Faulty held now: {getBalance(faultyBalanceMap, changeTechnicianId, changeProductId).toLocaleString()}
+                    </div>
+                    <label className="full-width">
+                      Notes
+                      <textarea value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} rows={3} />
+                    </label>
+                    <button className="primary-button full-width" type="submit" disabled={submitting || !technicians.length}>
+                      <PackageCheck size={18} />
+                      Save changeover
+                    </button>
+                  </form>
+                </>
+              ) : null}
+
+              {activeWTab === "pack" ? (
+                <>
+                  <p className="el-intro">
+                    Emails Specific Freight (Damien Doyle, CC {pickupConfig.freight.cc.join(", ")}) to pack stock for posting to a
+                    customer and send dimensions. Opens a preview you can edit, with a PDF download. Does not move stock.
+                  </p>
+                  <div className="stack-form">
+                    <div className="warranty-form">
+                      <label>
+                        Request type
+                        <select value={packType} onChange={(event) => setPackType(event.target.value as "warranty" | "oneoff")}>
+                          <option value="warranty">Warranty</option>
+                          <option value="oneoff">One-Off Post</option>
+                        </select>
+                      </label>
+                      <label>
+                        Reference
+                        <input
+                          value={packReference}
+                          onChange={(event) => setPackReference(event.target.value)}
+                          placeholder={selectedJob ? `${selectedJob.job_number} (job)` : "Customer reference number"}
+                        />
+                      </label>
+                    </div>
+                    <div className="qty-list">
+                      {activeProducts.map((product) => {
+                        const freight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+                        return (
+                          <div className="qty-row" key={product.id}>
+                            <div className="qty-name">
+                              <strong>{product.name}</strong>
+                              <span>
+                                {freight ? `${getBalance(goodBalanceMap, freight.id, product.id).toLocaleString()} at Specific Freight` : " "}
+                              </span>
+                            </div>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="0"
+                              value={packQty[product.id] ?? ""}
+                              onChange={(event) => setPackQty({ ...packQty, [product.id]: event.target.value })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="form-actions">
+                      <button className="primary-button" type="button" onClick={onRequestPack}>
+                        <Truck size={18} />
+                        Review pack request
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {selectedJob && activeWTab === "notes" ? (
+                <div className="job-notes wj-notes">
+                  <div className="job-notes-head">
+                    <span>Notes</span>
+                    {editingNotesId === selectedJob.id ? (
+                      <span className="job-notes-tools">
+                        <button
+                          className="icon-text-button"
+                          type="button"
+                          onClick={() => {
+                            onSaveJobNotes(selectedJob.id, draftNotes);
+                            setEditingNotesId(null);
+                          }}
+                        >
+                          <Check size={15} /> Save
+                        </button>
+                        <button className="icon-text-button" type="button" onClick={() => setEditingNotesId(null)}>
+                          <X size={15} /> Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="icon-text-button"
+                        type="button"
+                        onClick={() => {
+                          setEditingNotesId(selectedJob.id);
+                          setDraftNotes(selectedJob.notes ?? "");
+                        }}
+                      >
+                        <Pencil size={15} /> Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingNotesId === selectedJob.id ? (
+                    <textarea rows={5} value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} autoFocus />
+                  ) : (
+                    <p className={selectedJob.notes ? "wj-notes-body" : "wj-notes-body muted"}>{selectedJob.notes || "No notes yet."}</p>
+                  )}
+                </div>
+              ) : null}
+
+              {!selectedJob && activeWTab === "new" ? (
+                <>
+                  <p className="el-intro">Add a new warranty or one-off post job.</p>
+                  <form className="warranty-form" onSubmit={onCreateJob}>
+                    <label>
+                      Type
+                      <select value={jobType} onChange={(event) => setJobType(event.target.value as WarrantyJobType)}>
+                        <option value="warranty">Warranty</option>
+                        <option value="oneoff">One-Off Post</option>
+                      </select>
+                    </label>
+                    <label>
+                      Job number
+                      <input
+                        value={jobNumber}
+                        onChange={(event) => setJobNumber(event.target.value)}
+                        placeholder="Enter job number"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Customer
+                      <input
+                        value={customerName}
+                        onChange={(event) => setCustomerName(event.target.value)}
+                        placeholder="Enter customer name"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Phone
+                      <input
+                        value={customerPhone}
+                        onChange={(event) => setCustomerPhone(event.target.value)}
+                        placeholder="Enter phone number"
+                      />
+                    </label>
+                    <label className="full-width">
+                      Address
+                      <input
+                        value={customerAddress}
+                        onChange={(event) => setCustomerAddress(event.target.value)}
+                        placeholder="Enter full address"
+                      />
+                    </label>
+                    <label className="full-width">
+                      Notes
+                      <textarea
+                        value={jobNotes}
+                        onChange={(event) => setJobNotes(event.target.value)}
+                        rows={2}
+                        placeholder="Add notes (optional)"
+                      />
+                    </label>
+                    <button className="primary-button full-width" type="submit" disabled={submitting}>
+                      <Plus size={18} />
+                      Create job
+                    </button>
+                  </form>
+                </>
+              ) : null}
             </div>
-            <div className="form-actions">
-              <button className="primary-button" type="button" onClick={onRequestPack}>
-                <Truck size={18} />
-                Review pack request
-              </button>
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
+      </div>
     </section>
   );
 }

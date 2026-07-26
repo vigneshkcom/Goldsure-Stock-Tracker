@@ -3442,3 +3442,100 @@ html {
   .el-statstrip { grid-template-columns: 1fr 1fr; }
   .el-stat { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* ============================================================
+   WISECSS12 — Warranty tab: master-detail + tabbed actions
+   ============================================================ */
+.warranty-stack .elec2-grid { margin-top: 4px; }
+
+/* roster tools */
+.primary-button.sm { padding: 7px 12px; font-size: 13px; }
+.wj-selectbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12.5px;
+}
+.wj-selectbar .select-all { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.wj-selectbar .linklike { font-size: 12.5px; }
+
+/* job rows */
+.wj-list { max-height: 60vh; }
+.wj-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.wj-row:hover { background: var(--soft); }
+.wj-row.active { background: var(--accent-soft); border-color: #cdeab0; }
+.wj-row.picked { background: var(--accent-soft); }
+.wj-row .pick { display: inline-flex; }
+.wj-main { min-width: 0; }
+.wj-top { display: flex; align-items: center; gap: 8px; }
+.wj-top strong { font-size: 14px; color: var(--ink); }
+.wj-cust {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wj-chip { font-size: 11.5px; white-space: nowrap; }
+/* status accent stripe on the row's left edge */
+.wj-row.status-open { border-left-color: var(--line-strong); }
+.wj-row.status-posted { border-left-color: var(--blue); }
+.wj-row.status-completed { border-left-color: var(--primary-deep); }
+.wj-row.status-closed { border-left-color: var(--rose); }
+
+.wj-pager { padding: 12px 4px 4px; border-top: 1px solid var(--line); margin-top: 6px; }
+.wj-pager .pager-info { font-size: 12px; }
+
+/* overview facts */
+.wj-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+.wj-facts > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wj-facts span {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.wj-facts strong { font-size: 14px; color: var(--ink); font-weight: 600; word-break: break-word; }
+
+/* notes tab */
+.wj-notes .job-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.wj-notes .job-notes-head > span {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.wj-notes-body { margin: 0; font-size: 14px; color: var(--ink); line-height: 1.5; }
+.wj-notes textarea { width: 100%; }
+
+@media (max-width: 720px) {
+  .wj-facts { grid-template-columns: 1fr; }
+}
