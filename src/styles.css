@@ -3556,3 +3556,34 @@ html {
 }
 .reference-link.ref-chip::before { content: "↗"; font-size: 11px; }
 .reference-link.ref-chip:hover { text-decoration: underline; }
+
+/* ============================================================
+   WISECSS13 — Bigger dashboard tables (Product Totals, Stock on
+   Hand, Stock Losses). Headers and figures were too small.
+   ============================================================ */
+.dashboard-data-table th,
+.dashboard-losses-table th {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4a4e5b;
+  padding: 15px 16px;
+}
+.dashboard-data-table td,
+.dashboard-losses-table td {
+  font-size: 1.04rem;
+  padding: 15px 16px;
+}
+.dashboard-data-table td strong,
+.dashboard-losses-table td strong {
+  font-size: 1.08rem;
+}
+.dashboard-data-table td span {
+  font-size: 0.82rem;
+}
+.dashboard-data-table td.numeric-cell {
+  font-size: 1.18rem;
+}
+.dashboard-data-table td.total-cell {
+  font-size: 1.28rem;
+}

@@ -2649,7 +2649,7 @@ function DashboardView({
             </div>
           </div>
           <div className="responsive-table">
-            <table>
+            <table className="dashboard-losses-table">
               <thead>
                 <tr>
                   <th>Electrician</th>
