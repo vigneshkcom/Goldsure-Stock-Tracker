@@ -72,7 +72,7 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
 
   y = section(
     doc,
-    "Received This Month",
+    "Stock Received (all dates)",
     ["Date", "Type", "Product", "From", "Qty"],
     input.received.map((row) => [row.date, row.type, row.product, row.from || "-", String(row.qty)]),
     y + 26,

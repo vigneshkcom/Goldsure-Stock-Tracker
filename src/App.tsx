@@ -1260,8 +1260,10 @@ export default function App() {
       faulty: getBalance(faultyBalanceMap, electrician.id, product.id),
     }));
 
+    // All good stock ever received by this electrician, oldest first, with exact
+    // dates — so a report run in a later month still shows earlier issuances.
     const received = data.movements
-      .filter((m) => m.to_holder_id === electrician.id && getMovementCondition(m) === "good" && inMonth(m.movement_date))
+      .filter((m) => m.to_holder_id === electrician.id && getMovementCondition(m) === "good")
       .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
       .map((m) => ({
         date: formatDate(m.movement_date),
