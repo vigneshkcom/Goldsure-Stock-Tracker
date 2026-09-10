@@ -14,6 +14,7 @@ export type MovementType =
   | "install"
   | "customer_post"
   | "faulty_collect"
+  | "mark_faulty"
   | "adjustment";
 
 export type Product = {

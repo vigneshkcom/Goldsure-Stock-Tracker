@@ -67,7 +67,7 @@ const LOCAL_STORAGE_KEY = "stock-tracker-data-v1";
 
 // Move Stock covers warehouse-level actions only. Issuing and installing stock
 // for electricians lives on the Electricians tab, so they are not offered here.
-const generalMovementTypes: MovementType[] = ["opening", "receive", "return", "adjustment"];
+const generalMovementTypes: MovementType[] = ["opening", "receive", "return", "mark_faulty", "adjustment"];
 
 const movementLabels: Record<MovementType, string> = {
   opening: "Opening",
@@ -77,6 +77,7 @@ const movementLabels: Record<MovementType, string> = {
   install: "Install",
   customer_post: "Post to customer",
   faulty_collect: "Faulty collected",
+  mark_faulty: "Marked faulty",
   adjustment: "Adjustment",
 };
 
@@ -90,6 +91,7 @@ const movementActionLabels: Record<MovementType, string> = {
   install: "Install / use on job",
   customer_post: "Post to customer",
   faulty_collect: "Faulty collected",
+  mark_faulty: "Mark stock faulty",
   adjustment: "Adjust count",
 };
 
@@ -101,6 +103,7 @@ const movementDescriptions: Record<MovementType, string> = {
   install: "Stock is installed on a job and permanently leaves the electrician.",
   customer_post: "Replacement stock posted to a customer (managed on the Warranty tab).",
   faulty_collect: "A faulty unit is collected and held by the electrician (Warranty tab).",
+  mark_faulty: "A holder's good stock is now faulty. Moves it from good to faulty for the same holder.",
   adjustment: "Manually correct a count up or down (e.g. stocktake, loss, found stock).",
 };
 
@@ -112,6 +115,7 @@ const movementTone: Record<MovementType, string> = {
   install: "negative",
   customer_post: "info",
   faulty_collect: "warning",
+  mark_faulty: "warning",
   adjustment: "neutral",
 };
 
@@ -1720,6 +1724,12 @@ export default function App() {
       toId = toHolderId || warehouses[0]?.id || null;
     }
 
+    // Marking stock faulty happens in place: the same holder loses good stock
+    // and gains the same amount of faulty stock.
+    if (movementType === "mark_faulty") {
+      fromId = fromHolderId || technicians[0]?.id || activeHolders[0]?.id || null;
+    }
+
     if (movementType === "install") {
       fromId = fromHolderId || technicians[0]?.id || null;
     }
@@ -1754,23 +1764,45 @@ export default function App() {
     setSubmitting(true);
 
     try {
-      await saveMovement({
-        id: crypto.randomUUID(),
-        movement_date: movementDate,
-        movement_type: movementType,
-        product_condition: condition,
-        product_id: productId,
-        quantity: parsedQuantity,
-        from_holder_id: fromId,
-        to_holder_id: toId,
-        warranty_job_id: null,
-        job_number: null,
-        customer_name: null,
-        reference: reference.trim() || null,
-        tracking: tracking.trim() || null,
-        notes: notes.trim() || null,
-        created_at: new Date().toISOString(),
-      });
+      if (movementType === "mark_faulty") {
+        // One holder's good stock becomes faulty: take it out of good and add
+        // the same amount to faulty for that holder.
+        const base = {
+          movement_date: movementDate,
+          movement_type: "mark_faulty" as MovementType,
+          product_id: productId,
+          quantity: parsedQuantity,
+          warranty_job_id: null,
+          job_number: null,
+          customer_name: null,
+          reference: reference.trim() || null,
+          tracking: null,
+          notes: notes.trim() || "Good stock marked faulty.",
+          created_at: new Date().toISOString(),
+        };
+        await saveMovements([
+          { ...base, id: crypto.randomUUID(), product_condition: "good", from_holder_id: fromId, to_holder_id: null },
+          { ...base, id: crypto.randomUUID(), product_condition: "faulty", from_holder_id: null, to_holder_id: fromId },
+        ]);
+      } else {
+        await saveMovement({
+          id: crypto.randomUUID(),
+          movement_date: movementDate,
+          movement_type: movementType,
+          product_condition: condition,
+          product_id: productId,
+          quantity: parsedQuantity,
+          from_holder_id: fromId,
+          to_holder_id: toId,
+          warranty_job_id: null,
+          job_number: null,
+          customer_name: null,
+          reference: reference.trim() || null,
+          tracking: tracking.trim() || null,
+          notes: notes.trim() || null,
+          created_at: new Date().toISOString(),
+        });
+      }
 
       setQuantity("1");
       setReference("");
@@ -2764,6 +2796,7 @@ function MovementForm({
     movementType === "issue" ||
     movementType === "return" ||
     movementType === "install" ||
+    movementType === "mark_faulty" ||
     (movementType === "adjustment" && adjustmentDirection === "out");
   const showTo =
     movementType === "opening" ||
@@ -2899,7 +2932,7 @@ function MovementForm({
 
         {showFrom ? (
           <label className="full-width">
-            From (stock leaves here)
+            {movementType === "mark_faulty" ? "Holder (whose good stock is faulty)" : "From (stock leaves here)"}
             <select value={fromHolderId} onChange={(event) => setFromHolderId(event.target.value)} required>
               {fromOptions.map(holderOption)}
             </select>
@@ -2939,7 +2972,14 @@ function MovementForm({
           <span className="preview-label">Summary</span>
           <span className="preview-body">
             {quantityLabel} × {productLabel}
-            {fromLabel ? (
+            {movementType === "mark_faulty" ? (
+              <>
+                {" "}
+                <span className="preview-flow">
+                  {fromLabel || "holder"}: good <ArrowRight size={14} /> faulty
+                </span>
+              </>
+            ) : fromLabel ? (
               <>
                 {" "}
                 <span className="preview-flow">
