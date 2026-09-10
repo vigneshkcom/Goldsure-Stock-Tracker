@@ -53,7 +53,7 @@ create table if not exists public.stock_movements (
   user_id uuid,
   movement_date date not null default current_date,
   movement_type text not null check (
-    movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'adjustment')
+    movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment')
   ),
   product_condition text not null default 'good' check (product_condition in ('good', 'faulty')),
   product_id uuid not null references public.products(id) on delete restrict,
@@ -111,7 +111,7 @@ drop constraint if exists stock_movements_movement_type_check;
 
 alter table public.stock_movements
 add constraint stock_movements_movement_type_check
-check (movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'adjustment'));
+check (movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment'));
 
 alter table public.stock_movements
 drop constraint if exists stock_movements_product_condition_check;
