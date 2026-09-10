@@ -376,6 +376,8 @@ export default function App() {
   const [fromHolderId, setFromHolderId] = useState("");
   const [toHolderId, setToHolderId] = useState("");
   const [adjustmentDirection, setAdjustmentDirection] = useState<AdjustmentDirection>("in");
+  // Condition of the stock being returned to a warehouse: good or faulty.
+  const [moveCondition, setMoveCondition] = useState<ProductCondition>("good");
   const [quantity, setQuantity] = useState("1");
   const [reference, setReference] = useState("");
   const [tracking, setTracking] = useState("");
@@ -1736,11 +1738,15 @@ export default function App() {
       return;
     }
 
+    // Only a return can move faulty stock; everything else is good stock.
+    const condition: ProductCondition = movementType === "return" ? moveCondition : "good";
+
     if (fromId) {
-      const available = getBalance(goodBalanceMap, fromId, productId);
+      const balanceForCondition = condition === "faulty" ? faultyBalanceMap : goodBalanceMap;
+      const available = getBalance(balanceForCondition, fromId, productId);
       if (available < parsedQuantity) {
         const holder = data.holders.find((item) => item.id === fromId)?.name ?? "Selected holder";
-        setError(`${holder} has ${available} available for this product.`);
+        setError(`${holder} has ${available} ${condition} available for this product.`);
         return;
       }
     }
@@ -1752,7 +1758,7 @@ export default function App() {
         id: crypto.randomUUID(),
         movement_date: movementDate,
         movement_type: movementType,
-        product_condition: "good",
+        product_condition: condition,
         product_id: productId,
         quantity: parsedQuantity,
         from_holder_id: fromId,
@@ -1770,6 +1776,7 @@ export default function App() {
       setReference("");
       setTracking("");
       setNotes("");
+      setMoveCondition("good");
       setMessage("Movement saved.");
       setActiveTab("dashboard");
     } catch (movementError) {
@@ -2122,6 +2129,9 @@ export default function App() {
                 activeProducts={activeProducts}
                 adjustmentDirection={adjustmentDirection}
                 balanceMap={goodBalanceMap}
+                faultyBalanceMap={faultyBalanceMap}
+                moveCondition={moveCondition}
+                setMoveCondition={setMoveCondition}
                 fromHolderId={fromHolderId}
                 movementDate={movementDate}
                 movementType={movementType}
@@ -2692,6 +2702,9 @@ function MovementForm({
   activeProducts,
   adjustmentDirection,
   balanceMap,
+  faultyBalanceMap,
+  moveCondition,
+  setMoveCondition,
   fromHolderId,
   movementDate,
   movementType,
@@ -2720,6 +2733,9 @@ function MovementForm({
   activeProducts: Product[];
   adjustmentDirection: AdjustmentDirection;
   balanceMap: Map<string, number>;
+  faultyBalanceMap: Map<string, number>;
+  moveCondition: ProductCondition;
+  setMoveCondition: (value: ProductCondition) => void;
   fromHolderId: string;
   movementDate: string;
   movementType: MovementType;
@@ -2759,7 +2775,11 @@ function MovementForm({
     movementType === "issue" ? warehouses : movementType === "return" || movementType === "install" ? technicians : activeHolders;
   const toOptions =
     movementType === "issue" ? technicians : movementType === "return" || movementType === "receive" ? warehouses : activeHolders;
-  const available = showFrom ? getBalance(balanceMap, fromHolderId, productId) : null;
+  // Returns can move faulty stock; use the faulty balances so the picker,
+  // the available hint and the over-return guard all reflect faulty counts.
+  const isFaultyReturn = movementType === "return" && moveCondition === "faulty";
+  const activeBalanceMap = isFaultyReturn ? faultyBalanceMap : balanceMap;
+  const available = showFrom ? getBalance(activeBalanceMap, fromHolderId, productId) : null;
 
   // When the movement type changes, the From/To option lists change too. Reset a
   // selection that is no longer valid so the stored holder always matches the
@@ -2792,7 +2812,8 @@ function MovementForm({
   // "Melbourne Office — 263 in stock", so the counts are visible in the picker.
   const holderOption = (holder: Holder) => (
     <option value={holder.id} key={holder.id}>
-      {holder.name} — {getBalance(balanceMap, holder.id, productId).toLocaleString()} in stock
+      {holder.name} — {getBalance(activeBalanceMap, holder.id, productId).toLocaleString()}
+      {isFaultyReturn ? " faulty" : " in stock"}
     </option>
   );
 
@@ -2843,6 +2864,28 @@ function MovementForm({
           </div>
         ) : null}
 
+        {movementType === "return" ? (
+          <label className="full-width">
+            Stock condition
+            <div className="segmented-control" role="group" aria-label="Stock condition">
+              <button
+                className={moveCondition === "good" ? "active" : ""}
+                type="button"
+                onClick={() => setMoveCondition("good")}
+              >
+                Good stock
+              </button>
+              <button
+                className={moveCondition === "faulty" ? "active" : ""}
+                type="button"
+                onClick={() => setMoveCondition("faulty")}
+              >
+                Faulty stock
+              </button>
+            </div>
+          </label>
+        ) : null}
+
         <label className="full-width">
           Product
           <select value={productId} onChange={(event) => setProductId(event.target.value)} required>
@@ -2886,7 +2929,8 @@ function MovementForm({
 
         {showFrom && available !== null ? (
           <p className={`field-hint full-width ${notEnoughStock ? "warn" : ""}`}>
-            {fromLabel || "Selected holder"} currently has {available.toLocaleString()} of {productLabel}.
+            {fromLabel || "Selected holder"} currently has {available.toLocaleString()}
+            {isFaultyReturn ? " faulty" : ""} of {productLabel}.
             {notEnoughStock ? " That is not enough for this movement." : ""}
           </p>
         ) : null}
