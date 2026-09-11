@@ -196,6 +196,7 @@ export type StockReportInput = {
   asOfDate: string;
   remaining: { product: string; good: number; faulty: number }[];
   received: { date: string; type: string; product: string; from: string; qty: number }[];
+  returned: { date: string; product: string; condition: string; to: string; qty: number }[];
   installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
   lost: { date: string; product: string; qty: number; charged: string }[];
   logoUrl?: string;

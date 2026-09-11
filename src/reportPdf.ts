@@ -78,6 +78,14 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     y + 26,
   );
 
+  y = section(
+    doc,
+    "Stock Returned To Warehouse (all dates)",
+    ["Date", "Product", "Condition", "To", "Qty"],
+    input.returned.map((row) => [row.date, row.product, row.condition, row.to || "-", String(row.qty)]),
+    y + 26,
+  );
+
   const installRows: string[][] = [];
   input.installsByWeek.forEach((week) =>
     week.items.forEach((item, index) => installRows.push([index === 0 ? week.week : "", item.product, String(item.qty)])),

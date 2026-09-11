@@ -1279,6 +1279,20 @@ export default function App() {
         qty: m.quantity,
       }));
 
+    // Everything this electrician has returned to a warehouse (good or faulty),
+    // oldest first, so returns are visible on the report and not just implied by
+    // a lower on-hand count.
+    const returned = data.movements
+      .filter((m) => m.from_holder_id === electrician.id && m.movement_type === "return")
+      .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
+      .map((m) => ({
+        date: formatDate(m.movement_date),
+        product: productName(m.product_id),
+        condition: conditionLabels[getMovementCondition(m)],
+        to: holderName(m.to_holder_id),
+        qty: m.quantity,
+      }));
+
     const weekGroups = new Map<string, Map<string, number>>();
     data.movements
       .filter((m) => m.from_holder_id === electrician.id && m.movement_type === "install" && inMonth(m.movement_date))
@@ -1326,6 +1340,7 @@ export default function App() {
       asOfDate,
       remaining,
       received,
+      returned,
       installsByWeek,
       lost,
     };
