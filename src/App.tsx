@@ -4119,7 +4119,10 @@ function ElectriciansView({
   onViewHistory: (electricianId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const [tab, setTab] = useState<"overview" | "give" | "install" | "request" | "loss" | "history">("overview");
+  const [tab, setTab] = useState<"overview" | "give" | "install" | "installed" | "request" | "loss" | "history">(
+    "overview",
+  );
+  const [installWeek, setInstallWeek] = useState<string>("all");
   const [rosterTerm, setRosterTerm] = useState("");
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const initialsOf = (name: string) =>
@@ -4208,6 +4211,17 @@ function ElectriciansView({
       });
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   })();
+
+  // All-time installed totals per product, for the "overall" view.
+  const installTotals = new Map<string, number>();
+  installByWeek.forEach(([, byProduct]) =>
+    byProduct.forEach((qty, pid) => installTotals.set(pid, (installTotals.get(pid) ?? 0) + qty)),
+  );
+  const installGrandTotal = Array.from(installTotals.values()).reduce((sum, qty) => sum + qty, 0);
+  const selectedInstallWeek = installByWeek.find(([week]) => week === installWeek);
+  const weekTotal = selectedInstallWeek
+    ? Array.from(selectedInstallWeek[1].values()).reduce((sum, qty) => sum + qty, 0)
+    : 0;
 
   const losses = history.filter((movement) => movement.is_loss && movement.from_holder_id === electrician?.id);
   const lostTotal = losses.reduce((total, movement) => total + movement.quantity, 0);
@@ -4354,6 +4368,7 @@ function ElectriciansView({
                     ["overview", "Overview"],
                     ["give", "Give stock"],
                     ["install", "Install"],
+                    ["installed", "Installed"],
                     ["request", "Request stock"],
                     ["loss", "Loss"],
                     ["history", "History"],
@@ -4504,6 +4519,122 @@ function ElectriciansView({
                           </button>
                         </div>
                       </form>
+                    </>
+                  ) : null}
+
+                  {tab === "installed" ? (
+                    <>
+                      <p className="el-intro">
+                        What {electrician.name} has installed. Pick a week ending (Sunday) or view all time.
+                      </p>
+                      <label className="el-inline-select">
+                        Week
+                        <select value={installWeek} onChange={(event) => setInstallWeek(event.target.value)}>
+                          <option value="all">All time (overall)</option>
+                          {installByWeek.map(([week]) => (
+                            <option value={week} key={week}>
+                              {formatWeekEnding(week)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      {installByWeek.length === 0 ? (
+                        <p className="muted" style={{ marginTop: 16 }}>
+                          No installations recorded yet for {electrician.name}.
+                        </p>
+                      ) : installWeek === "all" ? (
+                        <>
+                          <p className="list-label">
+                            Overall &middot; {installGrandTotal.toLocaleString()} installed
+                          </p>
+                          <div className="responsive-table">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Product</th>
+                                  <th>Installed</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {activeProducts
+                                  .filter((product) => (installTotals.get(product.id) ?? 0) > 0)
+                                  .map((product) => (
+                                    <tr key={product.id}>
+                                      <td>
+                                        <strong>{product.name}</strong>
+                                        <span>{product.sku}</span>
+                                      </td>
+                                      <td>{(installTotals.get(product.id) ?? 0).toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="list-label">By week ending</p>
+                          <div className="responsive-table">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Week ending</th>
+                                  <th>Product</th>
+                                  <th>Installed</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {installByWeek.flatMap(([week, byProduct]) =>
+                                  activeProducts
+                                    .filter((product) => (byProduct.get(product.id) ?? 0) > 0)
+                                    .map((product, index) => (
+                                      <tr key={`${week}:${product.id}`}>
+                                        <td>{index === 0 ? formatWeekEnding(week) : ""}</td>
+                                        <td>{product.name}</td>
+                                        <td>{(byProduct.get(product.id) ?? 0).toLocaleString()}</td>
+                                      </tr>
+                                    )),
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="list-label">
+                            {formatWeekEnding(installWeek)} &middot; {weekTotal.toLocaleString()} installed
+                          </p>
+                          <div className="responsive-table">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Product</th>
+                                  <th>Installed</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedInstallWeek
+                                  ? activeProducts
+                                      .filter((product) => (selectedInstallWeek[1].get(product.id) ?? 0) > 0)
+                                      .map((product) => (
+                                        <tr key={product.id}>
+                                          <td>
+                                            <strong>{product.name}</strong>
+                                            <span>{product.sku}</span>
+                                          </td>
+                                          <td>{(selectedInstallWeek[1].get(product.id) ?? 0).toLocaleString()}</td>
+                                        </tr>
+                                      ))
+                                  : (
+                                      <tr>
+                                        <td colSpan={2} className="muted">
+                                          Nothing installed in this week.
+                                        </td>
+                                      </tr>
+                                    )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
                     </>
                   ) : null}
 
