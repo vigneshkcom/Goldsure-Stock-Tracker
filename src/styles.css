@@ -3603,3 +3603,10 @@ html {
   font-weight: 500;
   color: var(--ink);
 }
+
+/* Product Totals now has a Faulty column (6 columns): rebalance widths and
+   tint the faulty figure when there is faulty stock held. */
+.product-totals-table col.label-column { width: 30%; }
+.product-totals-table col.data-column { width: 14%; }
+.dashboard-data-table td.faulty-cell { color: var(--muted); }
+.dashboard-data-table td.faulty-cell.has-faulty { color: var(--rose); font-weight: 720; }

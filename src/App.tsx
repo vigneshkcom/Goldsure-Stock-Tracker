@@ -500,14 +500,19 @@ export default function App() {
           (total, holder) => total + getBalance(goodBalanceMap, holder.id, product.id),
           0,
         );
+        const faultyTotal = [...warehouses, ...technicians].reduce(
+          (total, holder) => total + getBalance(faultyBalanceMap, holder.id, product.id),
+          0,
+        );
         return {
           product,
           warehouseTotal,
           fieldTotal,
+          faultyTotal,
           total: warehouseTotal + fieldTotal,
         };
       }),
-    [activeProducts, goodBalanceMap, technicians, warehouses],
+    [activeProducts, goodBalanceMap, faultyBalanceMap, technicians, warehouses],
   );
 
   const totalStock = productTotals.reduce((total, row) => total + row.total, 0);
@@ -2525,6 +2530,7 @@ type ProductTotalRow = {
   product: Product;
   warehouseTotal: number;
   fieldTotal: number;
+  faultyTotal: number;
   total: number;
 };
 
@@ -2557,6 +2563,7 @@ function DashboardView({
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
   const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
+  const totalFaulty = productTotals.reduce((total, row) => total + row.faultyTotal, 0);
   const totalUnchargedUnits = lossSummary.reduce((total, row) => total + row.unchargedUnits, 0);
   return (
     <section className="dashboard-stack">
@@ -2585,7 +2592,10 @@ function DashboardView({
         <div className="panel-header">
           <div>
             <h2>Product Totals</h2>
-            <p>{latestMovement ? `Last movement: ${formatDate(latestMovement.movement_date)}` : "No movements recorded"}</p>
+            <p>
+              {latestMovement ? `Last movement: ${formatDate(latestMovement.movement_date)}` : "No movements recorded"}
+              {` · ${totalFaulty.toLocaleString()} faulty held`}
+            </p>
           </div>
           {canSeed ? (
             <button className="secondary-button" type="button" onClick={seedWorkbookSnapshot} disabled={submitting}>
@@ -2603,13 +2613,15 @@ function DashboardView({
               <col className="data-column" />
               <col className="data-column" />
               <col className="data-column" />
+              <col className="data-column" />
             </colgroup>
             <thead>
               <tr>
                 <th>Product</th>
                 <th>Warehouses</th>
                 <th>Field</th>
-                <th>Total</th>
+                <th>Faulty</th>
+                <th>Total (good)</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -2622,6 +2634,9 @@ function DashboardView({
                   </td>
                   <td className="numeric-cell">{row.warehouseTotal.toLocaleString()}</td>
                   <td className="numeric-cell">{row.fieldTotal.toLocaleString()}</td>
+                  <td className={`numeric-cell faulty-cell${row.faultyTotal > 0 ? " has-faulty" : ""}`}>
+                    {row.faultyTotal.toLocaleString()}
+                  </td>
                   <td className="numeric-cell total-cell">{row.total.toLocaleString()}</td>
                   <td>
                     <span className={row.total > 0 ? "status-chip ok" : "status-chip attention"}>
