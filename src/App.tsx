@@ -1251,7 +1251,7 @@ export default function App() {
     });
     setComposeTo(slip.to.join(", "));
     setComposeSubject(slip.subject);
-    setComposeCc(slip.cc.join(", "));
+    setComposeCc([...slip.cc, ...pickupConfig.alwaysCc].join(", "));
     setComposeMessage(defaultSlipMessage(slip.electrician.name));
     setComposeOpen(true);
   }
@@ -1377,7 +1377,7 @@ export default function App() {
       content: pdf,
     });
     setComposeTo(report.electrician.email ?? "");
-    setComposeCc("");
+    setComposeCc(pickupConfig.alwaysCc.join(", "));
     setComposeSubject(`Goldsure stock report - ${report.electrician.name} - as of ${report.asOfDate}`);
     setComposeMessage(
       `Hi ${firstName},\n\nHere is your current Goldsure stock report as of ${report.asOfDate}. Your stock on hand and this week's installs are below, with the full report attached as a PDF.`,
@@ -1422,7 +1422,7 @@ export default function App() {
       content: buildPackPdfBase64(packInput, logoDataUri || undefined),
     });
     setComposeTo(pickupConfig.freight.to.join(", "));
-    setComposeCc(pickupConfig.freight.cc.join(", "));
+    setComposeCc([...pickupConfig.freight.cc, ...pickupConfig.alwaysCc].join(", "));
     setComposeSubject(`Stock pickup request - ${requestDate}${reference ? ` - Reference ${reference}` : ""}`);
     setComposeMessage(
       "Hi Damien,\n\nCould you please pack the items listed below for delivery to a customer and provide the carton/package dimensions and total weight?\n\nOnce I receive these details, I will send through the shipping labels.",
@@ -1451,10 +1451,20 @@ export default function App() {
         .map((entry) => entry.trim())
         .filter(Boolean);
     const to = parseEmails(composeTo);
-    const cc = parseEmails(composeCc);
     if (!to.length) {
       setError("Enter at least one To address.");
       return;
+    }
+
+    // Always CC the configured address(es), deduped and never doubling up with a
+    // To recipient (case-insensitive).
+    const seen = new Set(to.map((address) => address.toLowerCase()));
+    const cc: string[] = [];
+    for (const address of [...parseEmails(composeCc), ...pickupConfig.alwaysCc]) {
+      const key = address.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cc.push(address);
     }
 
     // Email clients block data-URI images, so the signature logo must be a

@@ -2,6 +2,8 @@
 // Edit these here — they are not stored in the database.
 
 export const pickupConfig = {
+  // CC'd on every email the app sends (pickup slips, pack requests, reports).
+  alwaysCc: ["vignesh@goldsure.com.au"],
   company: {
     name: "Goldsure PTY LTD",
     requestedBy: "Vignesh Kirubakaran",
