@@ -355,7 +355,7 @@ function sortWarrantyJobs(jobs: WarrantyJob[]) {
 }
 
 type Tab = "dashboard" | "movements" | "electricians" | "warranty" | "setup";
-type AdjustmentDirection = "in" | "out";
+type AdjustmentDirection = "set" | "in" | "out";
 
 const tabMeta: Record<Tab, { title: string; section: string }> = {
   dashboard: { title: "Inventory overview", section: "Control centre" },
@@ -379,7 +379,9 @@ export default function App() {
   const [productId, setProductId] = useState("");
   const [fromHolderId, setFromHolderId] = useState("");
   const [toHolderId, setToHolderId] = useState("");
-  const [adjustmentDirection, setAdjustmentDirection] = useState<AdjustmentDirection>("in");
+  const [adjustmentDirection, setAdjustmentDirection] = useState<AdjustmentDirection>("set");
+  // The counted total for a "set to counted total" stock reconciliation.
+  const [countedTotal, setCountedTotal] = useState("");
   // Condition of the stock being returned to a warehouse: good or faulty.
   const [moveCondition, setMoveCondition] = useState<ProductCondition>("good");
   const [quantity, setQuantity] = useState("1");
@@ -1728,48 +1730,86 @@ export default function App() {
 
   async function handleAddMovement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsedQuantity = Number(quantity);
     setError(null);
     setMessage(null);
 
-    if (!productId || !Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
-      setError("Choose a product and enter a whole quantity above zero.");
+    if (!productId) {
+      setError("Choose a product.");
       return;
     }
 
+    const isReconcile = movementType === "adjustment" && adjustmentDirection === "set";
     let fromId: string | null = null;
     let toId: string | null = null;
+    let parsedQuantity: number;
+    let autoReference: string | null = null;
+    let autoNotes: string | null = null;
 
-    if (movementType === "opening" || movementType === "receive") {
-      toId = toHolderId || warehouses[0]?.id || activeHolders[0]?.id || null;
-    }
+    if (isReconcile) {
+      // Reconcile a holder's count to a physically counted total: work out the
+      // difference and record it as an adjustment with a clear stocktake note.
+      const holder = fromHolderId || activeHolders[0]?.id || null;
+      if (!holder) {
+        setError("Choose a holder to reconcile.");
+        return;
+      }
+      const counted = Number(countedTotal);
+      if (countedTotal.trim() === "" || !Number.isInteger(counted) || counted < 0) {
+        setError("Enter the counted total as a whole number (0 or more).");
+        return;
+      }
+      const system = getBalance(goodBalanceMap, holder, productId);
+      const delta = counted - system;
+      if (delta === 0) {
+        setError("The counted total already matches the system count — no adjustment needed.");
+        return;
+      }
+      parsedQuantity = Math.abs(delta);
+      if (delta > 0) toId = holder;
+      else fromId = holder;
+      const holderLabel = data.holders.find((item) => item.id === holder)?.name ?? "holder";
+      autoReference = reference.trim() || "Stocktake";
+      autoNotes = `Stocktake: ${holderLabel} system ${system} to counted ${counted} (${delta > 0 ? "+" : ""}${delta}).${
+        notes.trim() ? ` ${notes.trim()}` : ""
+      }`;
+    } else {
+      parsedQuantity = Number(quantity);
+      if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+        setError("Choose a product and enter a whole quantity above zero.");
+        return;
+      }
 
-    if (movementType === "issue") {
-      fromId = fromHolderId || warehouses[0]?.id || null;
-      toId = toHolderId || technicians[0]?.id || null;
-    }
+      if (movementType === "opening" || movementType === "receive") {
+        toId = toHolderId || warehouses[0]?.id || activeHolders[0]?.id || null;
+      }
 
-    if (movementType === "return") {
-      fromId = fromHolderId || technicians[0]?.id || null;
-      toId = toHolderId || warehouses[0]?.id || null;
-    }
+      if (movementType === "issue") {
+        fromId = fromHolderId || warehouses[0]?.id || null;
+        toId = toHolderId || technicians[0]?.id || null;
+      }
 
-    // Marking stock faulty happens in place: the same holder loses good stock
-    // and gains the same amount of faulty stock.
-    if (movementType === "mark_faulty") {
-      fromId = fromHolderId || technicians[0]?.id || activeHolders[0]?.id || null;
-    }
+      if (movementType === "return") {
+        fromId = fromHolderId || technicians[0]?.id || null;
+        toId = toHolderId || warehouses[0]?.id || null;
+      }
 
-    if (movementType === "install") {
-      fromId = fromHolderId || technicians[0]?.id || null;
-    }
+      // Marking stock faulty happens in place: the same holder loses good stock
+      // and gains the same amount of faulty stock.
+      if (movementType === "mark_faulty") {
+        fromId = fromHolderId || technicians[0]?.id || activeHolders[0]?.id || null;
+      }
 
-    if (movementType === "adjustment") {
-      const selectedHolder = adjustmentDirection === "in" ? toHolderId || fromHolderId : fromHolderId || toHolderId;
-      if (adjustmentDirection === "in") {
-        toId = selectedHolder || activeHolders[0]?.id || null;
-      } else {
-        fromId = selectedHolder || activeHolders[0]?.id || null;
+      if (movementType === "install") {
+        fromId = fromHolderId || technicians[0]?.id || null;
+      }
+
+      if (movementType === "adjustment") {
+        const selectedHolder = fromHolderId || activeHolders[0]?.id || null;
+        if (adjustmentDirection === "in") {
+          toId = selectedHolder;
+        } else {
+          fromId = selectedHolder;
+        }
       }
     }
 
@@ -1827,9 +1867,9 @@ export default function App() {
           warranty_job_id: null,
           job_number: null,
           customer_name: null,
-          reference: reference.trim() || null,
+          reference: autoReference ?? (reference.trim() || null),
           tracking: tracking.trim() || null,
-          notes: notes.trim() || null,
+          notes: autoNotes ?? (notes.trim() || null),
           created_at: new Date().toISOString(),
         });
       }
@@ -1839,7 +1879,8 @@ export default function App() {
       setTracking("");
       setNotes("");
       setMoveCondition("good");
-      setMessage("Movement saved.");
+      setCountedTotal("");
+      setMessage(isReconcile ? "Stock reconciled." : "Movement saved.");
       setActiveTab("dashboard");
     } catch (movementError) {
       setError(movementError instanceof Error ? movementError.message : "Could not save movement.");
@@ -2194,6 +2235,8 @@ export default function App() {
                 faultyBalanceMap={faultyBalanceMap}
                 moveCondition={moveCondition}
                 setMoveCondition={setMoveCondition}
+                countedTotal={countedTotal}
+                setCountedTotal={setCountedTotal}
                 fromHolderId={fromHolderId}
                 movementDate={movementDate}
                 movementType={movementType}
@@ -2777,6 +2820,8 @@ function MovementForm({
   faultyBalanceMap,
   moveCondition,
   setMoveCondition,
+  countedTotal,
+  setCountedTotal,
   fromHolderId,
   movementDate,
   movementType,
@@ -2808,6 +2853,8 @@ function MovementForm({
   faultyBalanceMap: Map<string, number>;
   moveCondition: ProductCondition;
   setMoveCondition: (value: ProductCondition) => void;
+  countedTotal: string;
+  setCountedTotal: (value: string) => void;
   fromHolderId: string;
   movementDate: string;
   movementType: MovementType;
@@ -2837,13 +2884,12 @@ function MovementForm({
     movementType === "return" ||
     movementType === "install" ||
     movementType === "mark_faulty" ||
-    (movementType === "adjustment" && adjustmentDirection === "out");
+    movementType === "adjustment";
   const showTo =
     movementType === "opening" ||
     movementType === "receive" ||
     movementType === "issue" ||
-    movementType === "return" ||
-    (movementType === "adjustment" && adjustmentDirection === "in");
+    movementType === "return";
   const fromOptions =
     movementType === "issue" ? warehouses : movementType === "return" || movementType === "install" ? technicians : activeHolders;
   const toOptions =
@@ -2853,6 +2899,12 @@ function MovementForm({
   const isFaultyReturn = movementType === "return" && moveCondition === "faulty";
   const activeBalanceMap = isFaultyReturn ? faultyBalanceMap : balanceMap;
   const available = showFrom ? getBalance(activeBalanceMap, fromHolderId, productId) : null;
+  // Reconcile ("set to counted total") derivations.
+  const isReconcile = movementType === "adjustment" && adjustmentDirection === "set";
+  const systemCount = getBalance(balanceMap, fromHolderId, productId);
+  const countedNumber = Number(countedTotal);
+  const countedValid = countedTotal.trim() !== "" && Number.isInteger(countedNumber) && countedNumber >= 0;
+  const reconcileDelta = countedValid ? countedNumber - systemCount : 0;
 
   // When the movement type changes, the From/To option lists change too. Reset a
   // selection that is no longer valid so the stored holder always matches the
@@ -2919,20 +2971,27 @@ function MovementForm({
         <p className="field-hint full-width">{movementDescriptions[movementType]}</p>
 
         {movementType === "adjustment" ? (
-          <div className="segmented-control" role="group" aria-label="Adjustment direction">
+          <div className="segmented-control" role="group" aria-label="Adjustment type">
+            <button
+              className={adjustmentDirection === "set" ? "active" : ""}
+              type="button"
+              onClick={() => setAdjustmentDirection("set")}
+            >
+              Set to counted total
+            </button>
             <button
               className={adjustmentDirection === "in" ? "active" : ""}
               type="button"
               onClick={() => setAdjustmentDirection("in")}
             >
-              Add stock (in)
+              Add (in)
             </button>
             <button
               className={adjustmentDirection === "out" ? "active" : ""}
               type="button"
               onClick={() => setAdjustmentDirection("out")}
             >
-              Remove stock (out)
+              Remove (out)
             </button>
           </div>
         ) : null}
@@ -2972,7 +3031,11 @@ function MovementForm({
 
         {showFrom ? (
           <label className="full-width">
-            {movementType === "mark_faulty" ? "Holder (whose good stock is faulty)" : "From (stock leaves here)"}
+            {movementType === "mark_faulty"
+              ? "Holder (whose good stock is faulty)"
+              : movementType === "adjustment"
+                ? "Holder (to adjust)"
+                : "From (stock leaves here)"}
             <select value={fromHolderId} onChange={(event) => setFromHolderId(event.target.value)} required>
               {fromOptions.map(holderOption)}
             </select>
@@ -2988,19 +3051,43 @@ function MovementForm({
           </label>
         ) : null}
 
-        <label className="full-width">
-          Quantity
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            required
-          />
-        </label>
+        {isReconcile ? (
+          <label className="full-width">
+            Counted total (what was physically counted)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={countedTotal}
+              onChange={(event) => setCountedTotal(event.target.value)}
+              placeholder={String(systemCount)}
+              required
+            />
+          </label>
+        ) : (
+          <label className="full-width">
+            Quantity
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              required
+            />
+          </label>
+        )}
 
-        {showFrom && available !== null ? (
+        {isReconcile ? (
+          <p className={`field-hint full-width ${countedValid && reconcileDelta !== 0 ? "warn" : ""}`}>
+            System shows {systemCount.toLocaleString()} of {productLabel} for {fromLabel || "this holder"}.
+            {countedValid
+              ? reconcileDelta === 0
+                ? " Counted total matches — no adjustment needed."
+                : ` This will ${reconcileDelta > 0 ? "add" : "remove"} ${Math.abs(reconcileDelta).toLocaleString()} to reconcile.`
+              : " Enter the counted total to see the difference."}
+          </p>
+        ) : showFrom && available !== null ? (
           <p className={`field-hint full-width ${notEnoughStock ? "warn" : ""}`}>
             {fromLabel || "Selected holder"} currently has {available.toLocaleString()}
             {isFaultyReturn ? " faulty" : ""} of {productLabel}.
@@ -3011,6 +3098,21 @@ function MovementForm({
         <div className="movement-preview full-width" role="status">
           <span className="preview-label">Summary</span>
           <span className="preview-body">
+            {isReconcile ? (
+              <>
+                Set {fromLabel || "holder"} to {countedValid ? countedNumber.toLocaleString() : "—"} × {productLabel}
+                {countedValid && reconcileDelta !== 0 ? (
+                  <>
+                    {" "}
+                    <span className="preview-flow">
+                      {reconcileDelta > 0 ? "+" : "−"}
+                      {Math.abs(reconcileDelta).toLocaleString()} adjustment
+                    </span>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
             {quantityLabel} × {productLabel}
             {movementType === "mark_faulty" ? (
               <>
@@ -3034,6 +3136,8 @@ function MovementForm({
                 </span>
               </>
             ) : null}
+              </>
+            )}
           </span>
         </div>
 
