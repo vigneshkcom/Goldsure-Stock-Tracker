@@ -279,6 +279,51 @@ export function buildReportEmailBodyInner(input: ReportEmailBodyInput): string {
     <p style="font-size:13px;color:#555;margin:20px 0 0;">The full stock report is attached as a PDF.</p>`;
 }
 
+// A warehouse's on-hand stock plus its movement history since a chosen date,
+// so the warehouse can confirm what they should physically be holding.
+export type WarehouseReportInput = {
+  warehouseName: string;
+  asOfDate: string;
+  sinceDate: string;
+  onHand: { product: string; good: number; faulty: number }[];
+  movements: {
+    date: string;
+    type: string;
+    condition: string;
+    product: string;
+    direction: "in" | "out";
+    counterpart: string;
+    qty: number;
+  }[];
+  logoUrl?: string;
+};
+
+export type WarehouseReportEmailBodyInput = {
+  warehouseName: string;
+  asOfDate: string;
+  sinceDate: string;
+  onHand: { product: string; good: number; faulty: number }[];
+};
+
+// Short email body: current holding only. Full movement detail is in the
+// attached PDF, so the warehouse can check the summary and dig in if needed.
+export function buildWarehouseReportEmailBodyInner(input: WarehouseReportEmailBodyInput): string {
+  const rows = input.onHand
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.good.toLocaleString()}</td><td style="${cell};text-align:center;">${row.faulty.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
+  return `
+    <h2 style="font-size:1.05rem;margin:0 0 6px;">${escapeHtml(input.warehouseName)} stock holding as of ${escapeHtml(input.asOfDate)}</h2>
+    <table style="border-collapse:collapse;font-size:13px;min-width:340px;">
+      <tr><th style="${head}">Product</th><th style="${head}">Good</th><th style="${head}">Faulty</th></tr>
+      ${rows}
+    </table>
+    <p style="font-size:13px;color:#555;margin:16px 0 0;">This is what our records show you should be holding. A full movement history since ${escapeHtml(input.sinceDate)} is attached as a PDF. Please confirm this matches your physical count and let us know if anything looks different.</p>`;
+}
+
 // Monthly stock statement emailed to an electrician.
 export function buildStockReportInner(input: StockReportInput): string {
   const logo = input.logoUrl

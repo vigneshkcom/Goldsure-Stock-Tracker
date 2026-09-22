@@ -40,13 +40,14 @@ import {
   buildPickupSlipInner,
   buildReportEmailBodyInner,
   buildSignatureHtml,
+  buildWarehouseReportEmailBodyInner,
   formatSlipDate,
   messageToHtml,
   wrapDocument,
   type PickupLine,
   type StockReportInput,
 } from "./pickupSlip";
-import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64 } from "./reportPdf";
+import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64, buildWarehouseReportPdfBase64 } from "./reportPdf";
 import { formatJobDateTime, statusCardClass, statusChipClass, statusLabels } from "./warranty";
 import WarrantyTracker from "./WarrantyTracker";
 import type {
@@ -446,13 +447,17 @@ export default function App() {
   const [lossNotes, setLossNotes] = useState("");
   const [logoDataUri, setLogoDataUri] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
-  const [composeKind, setComposeKind] = useState<"pickup" | "report" | "pack">("pickup");
+  const [composeKind, setComposeKind] = useState<"pickup" | "report" | "pack" | "warehouse">("pickup");
   const [composeBodyInner, setComposeBodyInner] = useState("");
   const [composeAttachment, setComposeAttachment] = useState<{ filename: string; content: string } | null>(null);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeCc, setComposeCc] = useState("");
   const [composeMessage, setComposeMessage] = useState("");
+
+  // Warehouse stock report: which warehouse, and "movements since" this date.
+  const [warehouseReportHolderId, setWarehouseReportHolderId] = useState("");
+  const [warehouseReportSince, setWarehouseReportSince] = useState("");
 
   const usingRemote = Boolean(supabase && !localOnly);
 
@@ -648,6 +653,13 @@ export default function App() {
     if (!fromHolderId && warehouses[0]) setFromHolderId(warehouses[0].id);
     if (!toHolderId && technicians[0]) setToHolderId(technicians[0].id);
   }, [fromHolderId, technicians, toHolderId, warehouses]);
+
+  useEffect(() => {
+    if (!warehouseReportHolderId && warehouses[0]) {
+      const specificFreight = warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight"));
+      setWarehouseReportHolderId((specificFreight ?? warehouses[0]).id);
+    }
+  }, [warehouseReportHolderId, warehouses]);
 
   useEffect(() => {
     const stockedWarehouse = warehouses.find((holder) => getBalance(goodBalanceMap, holder.id, postProductId) > 0);
@@ -1400,6 +1412,95 @@ export default function App() {
     );
   }
 
+  // Build a stock report for a chosen warehouse: current holding plus every
+  // movement touching it since a chosen date, so the warehouse can confirm
+  // what they should physically be holding.
+  function buildWarehouseReportForSelected() {
+    const warehouse = warehouses.find((holder) => holder.id === warehouseReportHolderId);
+    if (!warehouse) return null;
+    const holderName = (id: string | null) => data.holders.find((holder) => holder.id === id)?.name ?? "";
+    const productName = (id: string) => activeProducts.find((product) => product.id === id)?.name ?? "Unknown product";
+
+    const onHand = activeProducts.map((product) => ({
+      product: product.name,
+      good: getBalance(goodBalanceMap, warehouse.id, product.id),
+      faulty: getBalance(faultyBalanceMap, warehouse.id, product.id),
+    }));
+
+    const since = warehouseReportSince;
+    const movements = data.movements
+      .filter(
+        (movement) =>
+          (movement.from_holder_id === warehouse.id || movement.to_holder_id === warehouse.id) &&
+          (!since || movement.movement_date >= since),
+      )
+      .sort(
+        (a, b) => a.movement_date.localeCompare(b.movement_date) || (a.created_at ?? "").localeCompare(b.created_at ?? ""),
+      )
+      .map((movement) => {
+        const direction: "in" | "out" = movement.to_holder_id === warehouse.id ? "in" : "out";
+        const counterpart = direction === "in" ? holderName(movement.from_holder_id) : holderName(movement.to_holder_id);
+        return {
+          date: formatDate(movement.movement_date),
+          type: movementLabels[movement.movement_type],
+          condition: conditionLabels[getMovementCondition(movement)],
+          product: productName(movement.product_id),
+          direction,
+          counterpart,
+          qty: movement.quantity,
+        };
+      });
+
+    const asOfDate = formatDate(today());
+    const sinceDate = since ? formatDate(since) : "the beginning";
+    const reportData = { warehouseName: warehouse.name, asOfDate, sinceDate, onHand, movements };
+    return { warehouse, reportData, asOfDate, sinceDate };
+  }
+
+  function openComposeWarehouseReport() {
+    setError(null);
+    setMessage(null);
+    const report = buildWarehouseReportForSelected();
+    if (!report) {
+      setError("Choose a warehouse first.");
+      return;
+    }
+    const bodyInner = buildWarehouseReportEmailBodyInner({
+      warehouseName: report.warehouse.name,
+      asOfDate: report.asOfDate,
+      sinceDate: report.sinceDate,
+      onHand: report.reportData.onHand,
+    });
+    const pdf = buildWarehouseReportPdfBase64(report.reportData, logoDataUri || undefined);
+
+    setComposeKind("warehouse");
+    setComposeBodyInner(bodyInner);
+    setComposeAttachment({
+      filename: `${report.warehouse.name} stock report ${formatSlipDate(today())}.pdf`,
+      content: pdf,
+    });
+    setComposeTo(pickupConfig.freight.to.join(", "));
+    setComposeCc([...pickupConfig.freight.cc, ...pickupConfig.alwaysCc].join(", "));
+    setComposeSubject(`Goldsure warehouse stock report - ${report.warehouse.name} - as of ${report.asOfDate}`);
+    setComposeMessage(
+      `Hi Damien,\n\nHere is what our records show ${report.warehouse.name} should currently be holding, as of ${report.asOfDate}, along with a movement history since ${report.sinceDate}. Could you please confirm this matches your physical count and let us know if anything looks different?`,
+    );
+    setComposeOpen(true);
+  }
+
+  function downloadWarehouseReport() {
+    setError(null);
+    const report = buildWarehouseReportForSelected();
+    if (!report) {
+      setError("Choose a warehouse first.");
+      return;
+    }
+    downloadBase64Pdf(
+      `${report.warehouse.name} stock report ${formatSlipDate(today())}.pdf`,
+      buildWarehouseReportPdfBase64(report.reportData, logoDataUri || undefined),
+    );
+  }
+
   // Warranty: ask Specific Freight to pack items for a customer post.
   function openComposePackRequest() {
     setError(null);
@@ -1494,7 +1595,13 @@ export default function App() {
         throw new Error(result.error || "Could not send the email.");
       }
       const label =
-        composeKind === "report" ? "Stock report" : composeKind === "pack" ? "Pack request" : "Pickup slip";
+        composeKind === "report"
+          ? "Stock report"
+          : composeKind === "pack"
+            ? "Pack request"
+            : composeKind === "warehouse"
+              ? "Warehouse report"
+              : "Pickup slip";
       setMessage(`${label} emailed to ${to.join(", ")}.`);
       setComposeOpen(false);
       if (composeKind === "pickup") {
@@ -2201,6 +2308,14 @@ export default function App() {
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
               submitting={submitting}
+              warehouses={warehouses}
+              warehouseReportHolderId={warehouseReportHolderId}
+              setWarehouseReportHolderId={setWarehouseReportHolderId}
+              warehouseReportSince={warehouseReportSince}
+              setWarehouseReportSince={setWarehouseReportSince}
+              onEmailWarehouseReport={openComposeWarehouseReport}
+              onDownloadWarehouseReport={downloadWarehouseReport}
+              sendingSlip={sendingSlip}
             />
           ) : null}
 
@@ -2600,6 +2715,14 @@ function DashboardView({
   seedWorkbookSnapshot,
   canSeed,
   submitting,
+  warehouses,
+  warehouseReportHolderId,
+  setWarehouseReportHolderId,
+  warehouseReportSince,
+  setWarehouseReportSince,
+  onEmailWarehouseReport,
+  onDownloadWarehouseReport,
+  sendingSlip,
 }: {
   activeHolders: Holder[];
   activeProducts: Product[];
@@ -2613,6 +2736,14 @@ function DashboardView({
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
+  warehouses: Holder[];
+  warehouseReportHolderId: string;
+  setWarehouseReportHolderId: (value: string) => void;
+  warehouseReportSince: string;
+  setWarehouseReportSince: (value: string) => void;
+  onEmailWarehouseReport: () => void;
+  onDownloadWarehouseReport: () => void;
+  sendingSlip: boolean;
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
   const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
@@ -2701,6 +2832,52 @@ function DashboardView({
               ))}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Warehouse Stock Report</h2>
+            <p>Send a warehouse what our records say they should be holding, so they can confirm against their physical count.</p>
+          </div>
+        </div>
+        <div className="stack-form">
+          <div className="form-row">
+            <label>
+              Warehouse
+              <select value={warehouseReportHolderId} onChange={(event) => setWarehouseReportHolderId(event.target.value)}>
+                {warehouses.map((holder) => (
+                  <option value={holder.id} key={holder.id}>
+                    {holder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Movements since
+              <input
+                type="date"
+                value={warehouseReportSince}
+                onChange={(event) => setWarehouseReportSince(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="field-hint">
+            {warehouseReportSince
+              ? `Includes current holding plus every movement since ${formatDate(warehouseReportSince)}.`
+              : "Includes current holding plus the full movement history. Pick a date to limit it to recent activity."}
+          </p>
+          <div className="form-actions">
+            <button className="secondary-button" type="button" onClick={onDownloadWarehouseReport} disabled={sendingSlip}>
+              <Download size={18} />
+              Download PDF
+            </button>
+            <button className="primary-button" type="button" onClick={onEmailWarehouseReport} disabled={sendingSlip}>
+              <Send size={18} />
+              {sendingSlip ? "Sending…" : "Email report"}
+            </button>
+          </div>
         </div>
       </section>
 

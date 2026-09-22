@@ -1,6 +1,12 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
-import { productDescription, type PackRequestInput, type PickupSlipInput, type StockReportInput } from "./pickupSlip";
+import {
+  productDescription,
+  type PackRequestInput,
+  type PickupSlipInput,
+  type StockReportInput,
+  type WarehouseReportInput,
+} from "./pickupSlip";
 import { cartonsForSku, pickupConfig } from "./pickupConfig";
 
 const MARGIN = 40;
@@ -240,6 +246,49 @@ export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): str
     doc.text(line, MARGIN, y);
     y += 15;
   });
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.slice(dataUri.indexOf(",") + 1);
+}
+
+// A warehouse's on-hand stock plus its movement history since a chosen date.
+export function buildWarehouseReportPdfBase64(input: WarehouseReportInput, logo?: string): string {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+  const headerBottom = drawLogoHeader(doc, logo);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Warehouse Stock Report - ${input.warehouseName}`, MARGIN, headerBottom + 24);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(90, 90, 90);
+  doc.text(`As of ${input.asOfDate}`, MARGIN, headerBottom + 42);
+
+  let y = headerBottom + 68;
+  y = section(
+    doc,
+    "Current Stock Holding",
+    ["Product", "Good", "Faulty"],
+    input.onHand.map((row) => [row.product, String(row.good), String(row.faulty)]),
+    y,
+  );
+
+  section(
+    doc,
+    `Movements Since ${input.sinceDate}`,
+    ["Date", "Type", "Product", "Condition", "In / Out", "With", "Qty"],
+    input.movements.map((row) => [
+      row.date,
+      row.type,
+      row.product,
+      row.condition,
+      row.direction === "in" ? "In" : "Out",
+      row.counterpart || "-",
+      String(row.qty),
+    ]),
+    y + 26,
+  );
 
   const dataUri = doc.output("datauristring");
   return dataUri.slice(dataUri.indexOf(",") + 1);
