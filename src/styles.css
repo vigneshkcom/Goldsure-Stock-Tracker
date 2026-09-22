@@ -3625,3 +3625,603 @@ html {
   font-size: 0.8rem;
   text-align: center;
 }
+
+/* ============================================================
+   MONDAYCSS — monday.com-inspired reskin.
+   Purely visual: palette, typography, radii, shadows, chips.
+   No layout or behaviour changes. Appended last so it wins the
+   cascade over the earlier Wise theme layers.
+   ============================================================ */
+
+:root {
+  font-family:
+    "Figtree",
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  /* monday primary */
+  --primary: #0073ea;
+  --primary-deep: #0060b9;
+  --on-primary: #ffffff;
+  --accent-soft: #e5f4ff;
+  --accent-line: #cce5ff;
+
+  /* surfaces */
+  --canvas: #f6f7fb;
+  --sidebar: #ffffff;
+  --panel: #ffffff;
+  --soft: #f5f6f8;
+
+  /* lines */
+  --line: #e6e9ef;
+  --line-strong: #d0d4e4;
+
+  /* type */
+  --ink: #323338;
+  --ink-soft: #676879;
+  --muted: #676879;
+
+  /* monday status palette */
+  --positive: #00c875;
+  --negative: #e2445c;
+  --warning: #fdab3d;
+
+  --blue: #0073ea;
+  --blue-soft: #e5f4ff;
+  --plum: #a25ddc;
+  --plum-soft: #f3eafc;
+  --orchid: #a25ddc;
+  --red: #e2445c;
+  --red-soft: #fdeaed;
+  --rose: #e2445c;
+
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-strong: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Buttons: monday uses 4px radius ---------- */
+.primary-button {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: var(--primary);
+  border-radius: 4px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.primary-button:hover {
+  color: #ffffff;
+  background: var(--primary-deep);
+  border-color: var(--primary-deep);
+  box-shadow: none;
+}
+
+.secondary-button,
+.icon-text-button,
+.ghost-button,
+.icon-button {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.secondary-button:hover,
+.icon-text-button:hover,
+.ghost-button:hover,
+.icon-button:hover {
+  color: var(--primary);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.danger-button {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* ---------- Sidebar nav ---------- */
+.tabs button {
+  border-radius: 4px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tabs button:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+.tabs button.active {
+  color: var(--primary);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+.tabs button::before {
+  background: var(--primary);
+}
+
+/* ---------- Panels / cards ---------- */
+.panel {
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.panel-header {
+  background: #ffffff;
+  border-bottom-color: var(--line);
+}
+
+.panel-header h2,
+.modal-header h2 {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.metric-card {
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+/* One cohesive monday-blue accent across the metric cards. */
+.metric-card::after,
+.metric-card:nth-child(2)::after,
+.metric-card:nth-child(3)::after,
+.metric-card:nth-child(4)::after {
+  background: var(--primary);
+}
+
+.metric-card svg,
+.metric-ic svg,
+.head-ic svg {
+  color: var(--primary);
+}
+
+.metric-ic,
+.head-ic {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+/* ---------- Inputs ---------- */
+input,
+select,
+textarea {
+  border-radius: 4px;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: #b5b9c9;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.search-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 115, 234, 0.18);
+}
+
+.search-box {
+  border-radius: 4px;
+}
+
+:focus-visible {
+  outline-color: rgba(0, 115, 234, 0.4);
+}
+
+/* ---------- monday status pills: solid fill, white text ---------- */
+.status-chip {
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.status-chip.ok,
+.type-chip.positive {
+  color: #ffffff;
+  background: var(--positive);
+  border-color: transparent;
+}
+
+.status-chip.attention,
+.type-chip.warning {
+  color: #ffffff;
+  background: var(--warning);
+  border-color: transparent;
+}
+
+.type-chip.negative {
+  color: #ffffff;
+  background: var(--negative);
+  border-color: transparent;
+}
+
+.type-chip.info {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: transparent;
+}
+
+.type-chip.neutral {
+  color: var(--muted);
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+/* Warranty job status dropdowns — monday status colours. */
+.job-status-select {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.job-status-select.status-open {
+  color: #ffffff;
+  background: #8f92a1;
+  border-color: transparent;
+}
+
+.job-status-select.status-posted {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: transparent;
+}
+
+.job-status-select.status-replaced {
+  color: #ffffff;
+  background: var(--positive);
+  border-color: transparent;
+}
+
+.job-status-select.status-closed {
+  color: #ffffff;
+  background: var(--negative);
+  border-color: transparent;
+}
+
+/* Type badges (Warranty / One-Off). */
+.type-badge {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.type-badge.warranty {
+  color: #ffffff;
+  background: var(--plum);
+}
+
+.type-badge.oneoff {
+  color: #ffffff;
+  background: var(--primary);
+}
+
+/* Status-coloured left stripes on cards and rows. */
+.job-row.card-open,
+.tracker-card.card-open,
+.wj-row.status-open {
+  border-left-color: #c4c4c4;
+}
+
+.job-row.card-posted,
+.tracker-card.card-posted,
+.wj-row.status-posted {
+  border-left-color: var(--primary);
+}
+
+.job-row.card-replaced,
+.tracker-card.card-replaced,
+.wj-row.status-completed {
+  border-left-color: var(--positive);
+}
+
+.job-row.card-closed,
+.tracker-card.card-closed,
+.wj-row.status-closed {
+  border-left-color: var(--negative);
+}
+
+.job-row.card-closed .job-head strong {
+  color: var(--ink);
+}
+
+/* ---------- Selected / hover rows ---------- */
+.job-row:hover,
+.job-row.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  box-shadow: none;
+}
+
+.job-row.picked,
+.tracker-card.picked {
+  box-shadow: inset 0 0 0 2px var(--accent-line);
+}
+
+.el-rrow.active,
+.wj-row.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.el-rrow:hover,
+.wj-row:hover {
+  background: var(--soft);
+}
+
+.el-av {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.el-rrow.active .el-av {
+  background: #ffffff;
+}
+
+.el-dot {
+  background: var(--positive);
+}
+
+.el-rrow.zero .el-dot {
+  background: #c4c4c4;
+}
+
+.el-bigav {
+  background: var(--primary);
+  color: #ffffff;
+  border-radius: 8px;
+}
+
+.el-stat.hero strong {
+  color: var(--primary);
+}
+
+/* Detail tabs. */
+.el-tab.active {
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.el-tabbar,
+.segmented,
+.segmented-control {
+  background: var(--soft);
+  border-radius: 6px;
+}
+
+.segmented button,
+.segmented-control button {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.segmented button.active,
+.segmented-control button.active {
+  color: var(--primary);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ---------- Notices ---------- */
+.notice {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.notice.success {
+  color: #1f7a4d;
+  background: #e6f9f1;
+  border-color: #b3ecd4;
+}
+
+.notice.error {
+  color: #b32d3f;
+  background: var(--red-soft);
+  border-color: #f7c3cb;
+}
+
+/* ---------- Tables ---------- */
+th {
+  color: var(--muted);
+  background: var(--soft);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-data-table th,
+.dashboard-losses-table th {
+  color: var(--muted);
+  background: var(--soft);
+}
+
+.dashboard-data-table td.total-cell {
+  color: var(--ink);
+}
+
+.negative-cell {
+  color: var(--negative);
+  background: var(--red-soft);
+}
+
+.qty-in {
+  color: var(--positive);
+}
+
+.qty-out {
+  color: var(--negative);
+}
+
+/* ---------- Ledger ---------- */
+.ledger-group {
+  border-radius: 8px;
+  border-color: var(--line);
+}
+
+.reference-link {
+  color: var(--primary);
+}
+
+.reference-link.ref-chip {
+  color: var(--primary);
+  background: var(--accent-soft);
+}
+
+.tracking-chip {
+  color: var(--primary);
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+
+/* ---------- Modal ---------- */
+.modal {
+  border-radius: 8px;
+  box-shadow: var(--shadow-strong);
+}
+
+/* ---------- Empty / loading states ---------- */
+.empty-state svg,
+.loading-panel svg {
+  color: var(--primary);
+}
+
+.empty-state,
+.loading-panel {
+  border-radius: 8px;
+}
+
+/* ---------- Status pill in the sidebar footer ---------- */
+.status-pill.cloud {
+  color: var(--primary);
+  background: var(--accent-soft);
+}
+
+.status-pill {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* ---------- Scrollbars: neutral monday grey-blue ---------- */
+html,
+.responsive-table,
+.job-list,
+.ledger-list,
+.el-roster-list,
+.tracker-list {
+  scrollbar-color: #c3c6d4 transparent;
+}
+
+/* ---------- Pagination ---------- */
+.pager-num {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.pager-num.active {
+  color: #ffffff;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.pager-num:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* ---------- Page header eyebrow ---------- */
+.page-header span,
+.eyebrow {
+  color: var(--primary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* ---------- MONDAYCSS cleanup: neutralise leftover green-tinted
+     surfaces from the old Wise palette. ---------- */
+.status-pill.local {
+  color: var(--muted);
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+.ledger-item,
+.qty-row,
+.job-detail div,
+.availability-note {
+  background: #f9fafc;
+  border-color: var(--line);
+}
+
+.jobs-row {
+  background: #ffffff;
+}
+
+.jobs-row:hover,
+.jobs-row:focus-visible {
+  background: var(--soft);
+}
+
+.jobs-row.active {
+  background: var(--accent-soft);
+}
+
+.jobs-expand {
+  background: #f9fafc;
+}
+
+.ledger-group-items .ledger-item:last-child,
+.ledger-group-items .ledger-item:hover {
+  background: #f9fafc;
+}
+
+.movement-preview {
+  background: #f9fafc;
+  border-color: var(--line);
+}
+
+.list-label,
+.preview-label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.preview-flow,
+.qty-in {
+  color: var(--primary);
+}
+
+.el-inline-select select,
+.el-search,
+.search-box {
+  border-color: var(--line-strong);
+}
+
+/* Warranty tracker + roster cards. */
+.tracker-card,
+.wj-row,
+.el-rrow {
+  border-radius: 6px;
+}
+
+.wj-chip,
+.el-chip {
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--muted);
+}
