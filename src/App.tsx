@@ -2977,7 +2977,7 @@ function MovementForm({
               type="button"
               onClick={() => setAdjustmentDirection("set")}
             >
-              Set to counted total
+              Physical stocktake count
             </button>
             <button
               className={adjustmentDirection === "in" ? "active" : ""}
