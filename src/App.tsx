@@ -2971,7 +2971,7 @@ function MovementForm({
         <p className="field-hint full-width">{movementDescriptions[movementType]}</p>
 
         {movementType === "adjustment" ? (
-          <div className="segmented-control" role="group" aria-label="Adjustment type">
+          <div className="segmented-control adjust-modes full-width" role="group" aria-label="Adjustment type">
             <button
               className={adjustmentDirection === "set" ? "active" : ""}
               type="button"

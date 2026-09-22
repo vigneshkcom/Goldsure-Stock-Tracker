@@ -3610,3 +3610,18 @@ html {
 .product-totals-table col.data-column { width: 14%; }
 .dashboard-data-table td.faulty-cell { color: var(--muted); }
 .dashboard-data-table td.faulty-cell.has-faulty { color: var(--rose); font-weight: 720; }
+
+/* Adjustment mode picker has three options; lay them out evenly across the
+   full width so long labels do not wrap onto a second broken row. */
+.segmented-control.adjust-modes {
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  align-self: auto;
+}
+.segmented-control.adjust-modes button {
+  white-space: normal;
+  line-height: 1.15;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  text-align: center;
+}
