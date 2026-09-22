@@ -355,13 +355,14 @@ function sortWarrantyJobs(jobs: WarrantyJob[]) {
   );
 }
 
-type Tab = "dashboard" | "movements" | "electricians" | "warranty" | "setup";
+type Tab = "dashboard" | "movements" | "electricians" | "warranty" | "warehouseReport" | "setup";
 type AdjustmentDirection = "set" | "in" | "out";
 
 const tabMeta: Record<Tab, { title: string; section: string }> = {
   dashboard: { title: "Inventory overview", section: "Control centre" },
   electricians: { title: "Field inventory", section: "Operations" },
   warranty: { title: "Warranty operations", section: "Customer service" },
+  warehouseReport: { title: "Warehouse stock report", section: "Stock control" },
   movements: { title: "Movement ledger", section: "Stock control" },
   setup: { title: "Workspace settings", section: "Administration" },
 };
@@ -1233,9 +1234,11 @@ export default function App() {
     };
   }
 
-  function attachmentFileName(name: string) {
+  // dateValue defaults to today, but pickup-slip attachments pass the requested
+  // release date instead, since that is the date the stock actually goes out.
+  function attachmentFileName(name: string, dateValue: string = today()) {
     const firstName = name.trim().split(/\s+/)[0] || "Electrician";
-    return `${firstName} ${formatSlipDate(today())}.pdf`;
+    return `${firstName} ${formatSlipDate(dateValue)}.pdf`;
   }
 
   function defaultSlipMessage(electricianName: string) {
@@ -1260,7 +1263,7 @@ export default function App() {
     // Email body: slip table without the footer (footer lives in the PDF).
     setComposeBodyInner(buildPickupSlipInner({ ...slip.slipInput, withFooter: false }));
     setComposeAttachment({
-      filename: attachmentFileName(slip.electrician.name),
+      filename: attachmentFileName(slip.electrician.name, pickupReleaseDate),
       content: buildPickupPdfBase64(slip.slipInput, logoDataUri || undefined),
     });
     setComposeTo(slip.to.join(", "));
@@ -1541,7 +1544,7 @@ export default function App() {
       return;
     }
     downloadBase64Pdf(
-      attachmentFileName(slip.electrician.name),
+      attachmentFileName(slip.electrician.name, pickupReleaseDate),
       buildPickupPdfBase64(slip.slipInput, logoDataUri || undefined),
     );
   }
@@ -2221,6 +2224,15 @@ export default function App() {
             Warranty
           </button>
           <button
+            className={activeTab === "warehouseReport" ? "active" : ""}
+            type="button"
+            aria-current={activeTab === "warehouseReport" ? "page" : undefined}
+            onClick={() => setActiveTab("warehouseReport")}
+          >
+            <Factory size={18} />
+            Warehouse Report
+          </button>
+          <button
             className={activeTab === "movements" ? "active" : ""}
             type="button"
             aria-current={activeTab === "movements" ? "page" : undefined}
@@ -2308,6 +2320,11 @@ export default function App() {
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
               submitting={submitting}
+            />
+          ) : null}
+
+          {activeTab === "warehouseReport" ? (
+            <WarehouseReportView
               warehouses={warehouses}
               warehouseReportHolderId={warehouseReportHolderId}
               setWarehouseReportHolderId={setWarehouseReportHolderId}
@@ -2715,14 +2732,6 @@ function DashboardView({
   seedWorkbookSnapshot,
   canSeed,
   submitting,
-  warehouses,
-  warehouseReportHolderId,
-  setWarehouseReportHolderId,
-  warehouseReportSince,
-  setWarehouseReportSince,
-  onEmailWarehouseReport,
-  onDownloadWarehouseReport,
-  sendingSlip,
 }: {
   activeHolders: Holder[];
   activeProducts: Product[];
@@ -2736,14 +2745,6 @@ function DashboardView({
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
-  warehouses: Holder[];
-  warehouseReportHolderId: string;
-  setWarehouseReportHolderId: (value: string) => void;
-  warehouseReportSince: string;
-  setWarehouseReportSince: (value: string) => void;
-  onEmailWarehouseReport: () => void;
-  onDownloadWarehouseReport: () => void;
-  sendingSlip: boolean;
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
   const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
@@ -2832,52 +2833,6 @@ function DashboardView({
               ))}
             </tbody>
           </table>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Warehouse Stock Report</h2>
-            <p>Send a warehouse what our records say they should be holding, so they can confirm against their physical count.</p>
-          </div>
-        </div>
-        <div className="stack-form">
-          <div className="form-row">
-            <label>
-              Warehouse
-              <select value={warehouseReportHolderId} onChange={(event) => setWarehouseReportHolderId(event.target.value)}>
-                {warehouses.map((holder) => (
-                  <option value={holder.id} key={holder.id}>
-                    {holder.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Movements since
-              <input
-                type="date"
-                value={warehouseReportSince}
-                onChange={(event) => setWarehouseReportSince(event.target.value)}
-              />
-            </label>
-          </div>
-          <p className="field-hint">
-            {warehouseReportSince
-              ? `Includes current holding plus every movement since ${formatDate(warehouseReportSince)}.`
-              : "Includes current holding plus the full movement history. Pick a date to limit it to recent activity."}
-          </p>
-          <div className="form-actions">
-            <button className="secondary-button" type="button" onClick={onDownloadWarehouseReport} disabled={sendingSlip}>
-              <Download size={18} />
-              Download PDF
-            </button>
-            <button className="primary-button" type="button" onClick={onEmailWarehouseReport} disabled={sendingSlip}>
-              <Send size={18} />
-              {sendingSlip ? "Sending…" : "Email report"}
-            </button>
-          </div>
         </div>
       </section>
 
@@ -2983,6 +2938,90 @@ function DashboardView({
               </tbody>
             </table>
           </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function WarehouseReportView({
+  warehouses,
+  warehouseReportHolderId,
+  setWarehouseReportHolderId,
+  warehouseReportSince,
+  setWarehouseReportSince,
+  onEmailWarehouseReport,
+  onDownloadWarehouseReport,
+  sendingSlip,
+}: {
+  warehouses: Holder[];
+  warehouseReportHolderId: string;
+  setWarehouseReportHolderId: (value: string) => void;
+  warehouseReportSince: string;
+  setWarehouseReportSince: (value: string) => void;
+  onEmailWarehouseReport: () => void;
+  onDownloadWarehouseReport: () => void;
+  sendingSlip: boolean;
+}) {
+  const selectedWarehouse = warehouses.find((holder) => holder.id === warehouseReportHolderId);
+  return (
+    <section className="dashboard-stack">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Warehouse Stock Report</h2>
+            <p>Send a warehouse what our records say they should be holding, so they can confirm against their physical count.</p>
+          </div>
+        </div>
+        <div className="stack-form">
+          <div className="form-row">
+            <label>
+              Warehouse
+              <select value={warehouseReportHolderId} onChange={(event) => setWarehouseReportHolderId(event.target.value)}>
+                {warehouses.map((holder) => (
+                  <option value={holder.id} key={holder.id}>
+                    {holder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Movements since
+              <input
+                type="date"
+                value={warehouseReportSince}
+                onChange={(event) => setWarehouseReportSince(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="field-hint">
+            {warehouseReportSince
+              ? `Includes current holding plus every movement since ${formatDate(warehouseReportSince)}.`
+              : "Includes current holding plus the full movement history. Pick a date to limit it to recent activity."}
+          </p>
+          <div className="form-actions">
+            <button className="secondary-button" type="button" onClick={onDownloadWarehouseReport} disabled={sendingSlip}>
+              <Download size={18} />
+              Download PDF
+            </button>
+            <button className="primary-button" type="button" onClick={onEmailWarehouseReport} disabled={sendingSlip}>
+              <Send size={18} />
+              {sendingSlip ? "Sending…" : "Email report"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {!warehouses.length ? (
+        <section className="empty-state">
+          <Factory size={36} />
+          <h2>No warehouses yet</h2>
+          <p className="muted">Add a warehouse on the Setup tab first.</p>
+        </section>
+      ) : !selectedWarehouse ? (
+        <section className="empty-state">
+          <Factory size={36} />
+          <h2>Select a warehouse</h2>
         </section>
       ) : null}
     </section>
