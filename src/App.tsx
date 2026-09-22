@@ -1758,7 +1758,7 @@ export default function App() {
         setError("Enter the counted total as a whole number (0 or more).");
         return;
       }
-      const system = getBalance(goodBalanceMap, holder, productId);
+      const system = getBalance(moveCondition === "faulty" ? faultyBalanceMap : goodBalanceMap, holder, productId);
       const delta = counted - system;
       if (delta === 0) {
         setError("The counted total already matches the system count — no adjustment needed.");
@@ -1769,9 +1769,9 @@ export default function App() {
       else fromId = holder;
       const holderLabel = data.holders.find((item) => item.id === holder)?.name ?? "holder";
       autoReference = reference.trim() || "Stocktake";
-      autoNotes = `Stocktake: ${holderLabel} system ${system} to counted ${counted} (${delta > 0 ? "+" : ""}${delta}).${
-        notes.trim() ? ` ${notes.trim()}` : ""
-      }`;
+      autoNotes = `Stocktake (${moveCondition}): ${holderLabel} system ${system} to counted ${counted} (${
+        delta > 0 ? "+" : ""
+      }${delta}).${notes.trim() ? ` ${notes.trim()}` : ""}`;
     } else {
       parsedQuantity = Number(quantity);
       if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
@@ -1819,7 +1819,7 @@ export default function App() {
     }
 
     // Only a return can move faulty stock; everything else is good stock.
-    const condition: ProductCondition = movementType === "return" ? moveCondition : "good";
+    const condition: ProductCondition = movementType === "return" || isReconcile ? moveCondition : "good";
 
     if (fromId) {
       const balanceForCondition = condition === "faulty" ? faultyBalanceMap : goodBalanceMap;
@@ -2899,9 +2899,10 @@ function MovementForm({
   const isFaultyReturn = movementType === "return" && moveCondition === "faulty";
   const activeBalanceMap = isFaultyReturn ? faultyBalanceMap : balanceMap;
   const available = showFrom ? getBalance(activeBalanceMap, fromHolderId, productId) : null;
-  // Reconcile ("set to counted total") derivations.
+  // Reconcile ("physical stocktake count") derivations.
   const isReconcile = movementType === "adjustment" && adjustmentDirection === "set";
-  const systemCount = getBalance(balanceMap, fromHolderId, productId);
+  const reconcileFaulty = isReconcile && moveCondition === "faulty";
+  const systemCount = getBalance(reconcileFaulty ? faultyBalanceMap : balanceMap, fromHolderId, productId);
   const countedNumber = Number(countedTotal);
   const countedValid = countedTotal.trim() !== "" && Number.isInteger(countedNumber) && countedNumber >= 0;
   const reconcileDelta = countedValid ? countedNumber - systemCount : 0;
@@ -3053,6 +3054,28 @@ function MovementForm({
 
         {isReconcile ? (
           <label className="full-width">
+            Counting which stock?
+            <div className="segmented-control" role="group" aria-label="Stock condition to reconcile">
+              <button
+                className={moveCondition === "good" ? "active" : ""}
+                type="button"
+                onClick={() => setMoveCondition("good")}
+              >
+                Good stock
+              </button>
+              <button
+                className={moveCondition === "faulty" ? "active" : ""}
+                type="button"
+                onClick={() => setMoveCondition("faulty")}
+              >
+                Faulty stock
+              </button>
+            </div>
+          </label>
+        ) : null}
+
+        {isReconcile ? (
+          <label className="full-width">
             Counted total (what was physically counted)
             <input
               type="number"
@@ -3080,11 +3103,14 @@ function MovementForm({
 
         {isReconcile ? (
           <p className={`field-hint full-width ${countedValid && reconcileDelta !== 0 ? "warn" : ""}`}>
-            System shows {systemCount.toLocaleString()} of {productLabel} for {fromLabel || "this holder"}.
+            System shows {systemCount.toLocaleString()} {reconcileFaulty ? "faulty" : "good"} of {productLabel} for{" "}
+            {fromLabel || "this holder"}.
             {countedValid
               ? reconcileDelta === 0
                 ? " Counted total matches — no adjustment needed."
-                : ` This will ${reconcileDelta > 0 ? "add" : "remove"} ${Math.abs(reconcileDelta).toLocaleString()} to reconcile.`
+                : ` This will ${reconcileDelta > 0 ? "add" : "remove"} ${Math.abs(reconcileDelta).toLocaleString()} ${
+                    reconcileFaulty ? "faulty" : "good"
+                  } to reconcile.`
               : " Enter the counted total to see the difference."}
           </p>
         ) : showFrom && available !== null ? (
@@ -3100,7 +3126,8 @@ function MovementForm({
           <span className="preview-body">
             {isReconcile ? (
               <>
-                Set {fromLabel || "holder"} to {countedValid ? countedNumber.toLocaleString() : "—"} × {productLabel}
+                Set {fromLabel || "holder"} {reconcileFaulty ? "faulty" : "good"} to{" "}
+                {countedValid ? countedNumber.toLocaleString() : "—"} × {productLabel}
                 {countedValid && reconcileDelta !== 0 ? (
                   <>
                     {" "}
