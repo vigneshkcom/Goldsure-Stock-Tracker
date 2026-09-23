@@ -321,7 +321,7 @@ export function buildWarehouseReportEmailBodyInner(input: WarehouseReportEmailBo
       <tr><th style="${head}">Product</th><th style="${head}">Good</th><th style="${head}">Faulty</th></tr>
       ${rows}
     </table>
-    <p style="font-size:13px;color:#555;margin:16px 0 0;">This is what our records show you should be holding. A full movement history since ${escapeHtml(input.sinceDate)} is attached as a PDF. Please confirm this matches your physical count and let us know if anything looks different.</p>`;
+    <p style="font-size:13px;color:#555;margin:16px 0 0;">Stock reconciled by Goldsure as of ${escapeHtml(input.asOfDate)}. A full movement history since ${escapeHtml(input.sinceDate)} is attached as a PDF, for your information.</p>`;
 }
 
 // Monthly stock statement emailed to an electrician.

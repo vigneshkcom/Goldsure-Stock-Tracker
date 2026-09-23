@@ -458,7 +458,9 @@ export default function App() {
 
   // Warehouse stock report: which warehouse, and "movements since" this date.
   const [warehouseReportHolderId, setWarehouseReportHolderId] = useState("");
-  const [warehouseReportSince, setWarehouseReportSince] = useState("");
+  // Baseline date the warehouse figures were last reconciled with Specific
+  // Freight. Reports default to showing movements since then; editable in the UI.
+  const [warehouseReportSince, setWarehouseReportSince] = useState("2026-09-23");
 
   const usingRemote = Boolean(supabase && !localOnly);
 
@@ -1486,7 +1488,7 @@ export default function App() {
     setComposeCc([...pickupConfig.freight.cc, ...pickupConfig.alwaysCc].join(", "));
     setComposeSubject(`Goldsure warehouse stock report - ${report.warehouse.name} - as of ${report.asOfDate}`);
     setComposeMessage(
-      `Hi Damien,\n\nHere is what our records show ${report.warehouse.name} should currently be holding, as of ${report.asOfDate}, along with a movement history since ${report.sinceDate}. Could you please confirm this matches your physical count and let us know if anything looks different?`,
+      `Hi Damien,\n\nPlease see attached the stock reconciliation report from Goldsure for ${report.warehouse.name}, for your information.\n\nIf you notice any discrepancies, please let us know.`,
     );
     setComposeOpen(true);
   }
@@ -2970,7 +2972,7 @@ function WarehouseReportView({
         <div className="panel-header">
           <div>
             <h2>Warehouse Stock Report</h2>
-            <p>Send a warehouse what our records say they should be holding, so they can confirm against their physical count.</p>
+            <p>Send a warehouse a reconciled report of what our records show they are holding, for their information.</p>
           </div>
         </div>
         <div className="stack-form">
