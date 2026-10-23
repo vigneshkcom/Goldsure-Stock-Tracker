@@ -4361,3 +4361,54 @@ html,
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+/* Confirm-pickup modal: the tracking link is mandatory before stock lands on
+   an electrician's count. */
+.modal.narrow {
+  max-width: 460px;
+}
+
+.confirm-lines {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.confirm-lines li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  font-size: 0.88rem;
+  background: var(--surface-soft, #f6f7fb);
+}
+
+.confirm-lines li + li {
+  border-top: 1px solid var(--line);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--rose);
+}
+
+/* Per-product in-transit, shown under each product tile and in the
+   electrician's stock table. */
+.el-stat-transit {
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--warning);
+  letter-spacing: 0.01em;
+}
+
+td.transit-figure {
+  color: var(--warning);
+  font-weight: 700;
+}

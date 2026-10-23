@@ -452,6 +452,10 @@ export default function App() {
   const [pickupNotes, setPickupNotes] = useState("");
   const [pickupMode, setPickupMode] = useState<"Pickup" | "Delivery">("Pickup");
   const [sendingSlip, setSendingSlip] = useState(false);
+  // The pending pickup waiting to be approved, and the tracking link it needs.
+  const [confirmBatch, setConfirmBatch] = useState<PendingPickupBatch | null>(null);
+  const [confirmTracking, setConfirmTracking] = useState("");
+  const [confirmTrackingError, setConfirmTrackingError] = useState<string | null>(null);
   const [lossDate, setLossDate] = useState(today());
   const [lossQty, setLossQty] = useState<Record<string, string>>({});
   const [lossCharged, setLossCharged] = useState(false);
@@ -1264,24 +1268,23 @@ export default function App() {
   }
 
   // Confirm a pending pickup: the stock has been collected, so it now lands on
-  // the electrician's count.
-  async function confirmPendingPickup(ids: string[]) {
+  // the electrician's count. The tracking link is stamped on every line of the
+  // batch as the proof of delivery.
+  async function confirmPendingPickup(ids: string[], trackingLink: string) {
     if (!ids.length) return;
     setSubmitting(true);
     setError(null);
     setMessage(null);
+    const confirmed = { movement_status: "confirmed" as const, tracking: trackingLink };
     try {
       if (usingRemote && supabase) {
-        const { error: updateError } = await supabase
-          .from("stock_movements")
-          .update({ movement_status: "confirmed" })
-          .in("id", ids);
+        const { error: updateError } = await supabase.from("stock_movements").update(confirmed).in("id", ids);
         if (updateError) throw updateError;
         setData((current) =>
           normalizeData({
             ...current,
             movements: current.movements.map((movement) =>
-              ids.includes(movement.id) ? { ...movement, movement_status: "confirmed" as const } : movement,
+              ids.includes(movement.id) ? { ...movement, ...confirmed } : movement,
             ),
           }),
         );
@@ -1289,7 +1292,7 @@ export default function App() {
         updateLocal((current) => ({
           ...current,
           movements: current.movements.map((movement) =>
-            ids.includes(movement.id) ? { ...movement, movement_status: "confirmed" as const } : movement,
+            ids.includes(movement.id) ? { ...movement, ...confirmed } : movement,
           ),
         }));
       }
@@ -1299,6 +1302,27 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // A pickup is only approved once there is a tracking link to back it up, so
+  // confirming always goes through the modal rather than straight to the save.
+  function openPickupConfirm(batch: PendingPickupBatch) {
+    setConfirmBatch(batch);
+    setConfirmTracking("");
+    setConfirmTrackingError(null);
+  }
+
+  async function submitPickupConfirm() {
+    if (!confirmBatch) return;
+    const link = confirmTracking.trim();
+    if (!link) {
+      setConfirmTrackingError("Add the tracking link before approving this pickup.");
+      return;
+    }
+    setConfirmTrackingError(null);
+    await confirmPendingPickup(confirmBatch.ids, link);
+    setConfirmBatch(null);
+    setConfirmTracking("");
   }
 
   // Cancel a pending pickup: it never happened, so the stock goes back to the
@@ -2513,7 +2537,7 @@ export default function App() {
               submitting={submitting}
               pendingPickups={pendingPickups}
               pendingTotal={pendingTotal}
-              onConfirmPickup={confirmPendingPickup}
+              onConfirmPickup={openPickupConfirm}
               onCancelPickup={cancelPendingPickup}
             />
           ) : null}
@@ -2655,7 +2679,7 @@ export default function App() {
               onDownloadPickupSlip={handleDownloadPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
               pendingPickups={pendingPickups}
-              onConfirmPickup={confirmPendingPickup}
+              onConfirmPickup={openPickupConfirm}
               onCancelPickup={cancelPendingPickup}
               onEmailReport={openComposeStockReport}
               onDownloadReport={downloadStockReport}
@@ -2807,7 +2831,104 @@ export default function App() {
           onSend={confirmSendEmail}
         />
       ) : null}
+
+      {confirmBatch ? (
+        <ConfirmPickupModal
+          batch={confirmBatch}
+          tracking={confirmTracking}
+          error={confirmTrackingError}
+          saving={submitting}
+          setTracking={(value) => {
+            setConfirmTracking(value);
+            if (confirmTrackingError) setConfirmTrackingError(null);
+          }}
+          onCancel={() => setConfirmBatch(null)}
+          onConfirm={submitPickupConfirm}
+        />
+      ) : null}
     </main>
+  );
+}
+
+// Approving a pickup needs proof it actually arrived, so the tracking link is
+// required before the stock lands on the electrician's count.
+function ConfirmPickupModal({
+  batch,
+  tracking,
+  error,
+  saving,
+  setTracking,
+  onCancel,
+  onConfirm,
+}: {
+  batch: PendingPickupBatch;
+  tracking: string;
+  error: string | null;
+  saving: boolean;
+  setTracking: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2>Confirm pickup</h2>
+            <p>
+              {batch.total.toLocaleString()} unit{batch.total === 1 ? "" : "s"} to {batch.holderName}, released{" "}
+              {formatDate(batch.date)}.
+            </p>
+          </div>
+          <button className="icon-button" type="button" onClick={onCancel} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <ul className="confirm-lines">
+            {batch.lines.map((line) => (
+              <li key={line.product}>
+                <span>{line.product}</span>
+                <strong>{line.qty.toLocaleString()}</strong>
+              </li>
+            ))}
+          </ul>
+          <label>
+            Tracking link
+            <input
+              autoFocus
+              value={tracking}
+              onChange={(event) => setTracking(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && tracking.trim() && !saving) onConfirm();
+              }}
+              placeholder="https://workdrive.zoho.com/… or consignment number"
+            />
+          </label>
+          {error ? <p className="field-error">{error}</p> : null}
+          <p className="field-hint">
+            Required. It is saved against every line of this pickup and shows as a Tracking link in the movement
+            history.
+          </p>
+        </div>
+
+        <div className="modal-footer">
+          <button className="ghost-button" type="button" onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={onConfirm}
+            disabled={saving || !tracking.trim()}
+          >
+            <CheckCircle2 size={17} />
+            {saving ? "Saving…" : "Confirm pickup"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2965,7 +3086,7 @@ function DashboardView({
   submitting: boolean;
   pendingPickups: PendingPickupBatch[];
   pendingTotal: number;
-  onConfirmPickup: (ids: string[]) => void;
+  onConfirmPickup: (batch: PendingPickupBatch) => void;
   onCancelPickup: (ids: string[]) => void;
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
@@ -3031,7 +3152,7 @@ function DashboardView({
                     className="primary-button sm"
                     type="button"
                     disabled={submitting}
-                    onClick={() => onConfirmPickup(batch.ids)}
+                    onClick={() => onConfirmPickup(batch)}
                   >
                     <CheckCircle2 size={16} />
                     Mark as picked up
@@ -4776,7 +4897,7 @@ function ElectriciansView({
   onDownloadPickupSlip: () => void;
   onSendPickupSlip: () => void;
   pendingPickups: PendingPickupBatch[];
-  onConfirmPickup: (ids: string[]) => void;
+  onConfirmPickup: (batch: PendingPickupBatch) => void;
   onCancelPickup: (ids: string[]) => void;
   onEmailReport: () => void;
   onDownloadReport: () => void;
@@ -4843,6 +4964,16 @@ function ElectriciansView({
   const electricianPending = electrician
     ? pendingPickups.filter((batch) => batch.holderId === electrician.id)
     : [];
+  // In-transit units for this electrician, split by product, so each product
+  // tile can show what is still on its way.
+  const pendingByProduct = new Map<string, number>();
+  if (electrician) {
+    data.movements
+      .filter((movement) => movement.to_holder_id === electrician.id && isPendingMovement(movement))
+      .forEach((movement) => {
+        pendingByProduct.set(movement.product_id, (pendingByProduct.get(movement.product_id) ?? 0) + movement.quantity);
+      });
+  }
   // Stock released to this electrician that has not been collected yet.
   const totalPending = electrician
     ? data.movements
@@ -5024,12 +5155,18 @@ function ElectriciansView({
                     <span>On hand (good)</span>
                     <strong>{totalOnHand.toLocaleString()}</strong>
                   </div>
-                  {activeProducts.map((product) => (
-                    <div className="el-stat" key={product.id}>
-                      <span>{product.sku ?? product.name}</span>
-                      <strong>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</strong>
-                    </div>
-                  ))}
+                  {activeProducts.map((product) => {
+                    const inTransit = pendingByProduct.get(product.id) ?? 0;
+                    return (
+                      <div className="el-stat" key={product.id}>
+                        <span>{product.sku ?? product.name}</span>
+                        <strong>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</strong>
+                        {inTransit > 0 ? (
+                          <em className="el-stat-transit">+{inTransit.toLocaleString()} in transit</em>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                   <div className="el-stat">
                     <span>Faulty held</span>
                     <strong className="soft">{totalFaulty.toLocaleString()}</strong>
@@ -5089,7 +5226,7 @@ function ElectriciansView({
                         className="primary-button sm"
                         type="button"
                         disabled={submitting}
-                        onClick={() => onConfirmPickup(batch.ids)}
+                        onClick={() => onConfirmPickup(batch)}
                       >
                         <CheckCircle2 size={16} />
                         {electrician.name.split(" ")[0]} has it
@@ -5116,6 +5253,7 @@ function ElectriciansView({
                             <tr>
                               <th>Product</th>
                               <th>On hand (good)</th>
+                              {totalPending > 0 ? <th>In transit</th> : null}
                               <th>Faulty held</th>
                             </tr>
                           </thead>
@@ -5127,6 +5265,11 @@ function ElectriciansView({
                                   <span>{product.sku}</span>
                                 </td>
                                 <td>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</td>
+                                {totalPending > 0 ? (
+                                  <td className={(pendingByProduct.get(product.id) ?? 0) > 0 ? "transit-figure" : ""}>
+                                    {(pendingByProduct.get(product.id) ?? 0).toLocaleString()}
+                                  </td>
+                                ) : null}
                                 <td>{getBalance(faultyBalanceMap, electrician.id, product.id).toLocaleString()}</td>
                               </tr>
                             ))}
