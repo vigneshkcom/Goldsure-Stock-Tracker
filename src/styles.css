@@ -4317,3 +4317,47 @@ html,
   color: var(--warning);
   font-weight: 720;
 }
+
+/* Pending pickup banner on an electrician's page, so the stock can be
+   confirmed from where you are already looking. */
+.el-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.el-pending-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.el-pending-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.el-pending-top svg {
+  color: var(--warning);
+}
+
+.el-pending-sub {
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.el-pending-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}

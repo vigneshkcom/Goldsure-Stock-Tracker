@@ -2654,6 +2654,9 @@ export default function App() {
               onDeleteMovement={deleteMovement}
               onDownloadPickupSlip={handleDownloadPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
+              pendingPickups={pendingPickups}
+              onConfirmPickup={confirmPendingPickup}
+              onCancelPickup={cancelPendingPickup}
               onEmailReport={openComposeStockReport}
               onDownloadReport={downloadStockReport}
               onViewHistory={(electricianId) => {
@@ -2906,6 +2909,21 @@ function ComposeEmailModal({
   );
 }
 
+// One pickup slip's worth of pending stock: same electrician, release date and
+// reference, grouped so it is confirmed or cancelled as a unit.
+type PendingPickupBatch = {
+  key: string;
+  ids: string[];
+  holderId: string;
+  holderName: string;
+  fromName: string;
+  date: string;
+  reference: string;
+  notes: string;
+  lines: { product: string; qty: number }[];
+  total: number;
+};
+
 type ProductTotalRow = {
   product: Product;
   warehouseTotal: number;
@@ -2945,18 +2963,7 @@ function DashboardView({
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
-  pendingPickups: {
-    key: string;
-    ids: string[];
-    holderId: string;
-    holderName: string;
-    fromName: string;
-    date: string;
-    reference: string;
-    notes: string;
-    lines: { product: string; qty: number }[];
-    total: number;
-  }[];
+  pendingPickups: PendingPickupBatch[];
   pendingTotal: number;
   onConfirmPickup: (ids: string[]) => void;
   onCancelPickup: (ids: string[]) => void;
@@ -4712,6 +4719,9 @@ function ElectriciansView({
   onDeleteMovement,
   onDownloadPickupSlip,
   onSendPickupSlip,
+  pendingPickups,
+  onConfirmPickup,
+  onCancelPickup,
   onEmailReport,
   onDownloadReport,
   onViewHistory,
@@ -4765,6 +4775,9 @@ function ElectriciansView({
   onDeleteMovement: (movementId: string) => void;
   onDownloadPickupSlip: () => void;
   onSendPickupSlip: () => void;
+  pendingPickups: PendingPickupBatch[];
+  onConfirmPickup: (ids: string[]) => void;
+  onCancelPickup: (ids: string[]) => void;
   onEmailReport: () => void;
   onDownloadReport: () => void;
   onViewHistory: (electricianId: string) => void;
@@ -4827,6 +4840,9 @@ function ElectriciansView({
   const totalFaulty = electrician
     ? activeProducts.reduce((total, product) => total + getBalance(faultyBalanceMap, electrician.id, product.id), 0)
     : 0;
+  const electricianPending = electrician
+    ? pendingPickups.filter((batch) => batch.holderId === electrician.id)
+    : [];
   // Stock released to this electrician that has not been collected yet.
   const totalPending = electrician
     ? data.movements
@@ -5048,6 +5064,47 @@ function ElectriciansView({
                     </button>
                   ))}
                 </div>
+
+                {/* Stock already released to this electrician. Confirming here
+                    saves a trip to the dashboard. */}
+                {electricianPending.map((batch) => (
+                  <div className="el-pending" key={batch.key}>
+                    <div className="el-pending-main">
+                      <div className="el-pending-top">
+                        <Truck size={17} />
+                        <strong>{batch.total.toLocaleString()} in transit</strong>
+                        <span className="status-chip pending-chip">Not collected yet</span>
+                      </div>
+                      <span className="el-pending-sub">
+                        {batch.lines.map((line) => `${line.qty} × ${line.product}`).join(" · ")}
+                      </span>
+                      <span className="el-pending-meta">
+                        Released {formatDate(batch.date)}
+                        {batch.fromName ? ` from ${batch.fromName}` : ""}
+                        {batch.reference ? ` · ${batch.reference}` : ""}
+                      </span>
+                    </div>
+                    <div className="pending-actions">
+                      <button
+                        className="primary-button sm"
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => onConfirmPickup(batch.ids)}
+                      >
+                        <CheckCircle2 size={16} />
+                        {electrician.name.split(" ")[0]} has it
+                      </button>
+                      <button
+                        className="danger-button ghost sm"
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => onCancelPickup(batch.ids)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
 
                 <div className="el-tabbody">
                   {tab === "overview" ? (
