@@ -148,6 +148,35 @@ function isPendingMovement(movement: Movement): boolean {
   return movement.movement_status === "pending";
 }
 
+// Released stock either gets collected by the electrician (Pickup) or sent out
+// by the warehouse (Delivery). The slip reference records which, and every
+// label downstream follows it so the two are never confused.
+type FulfilmentMode = "Pickup" | "Delivery";
+
+function fulfilmentModeOf(reference: string | null | undefined): FulfilmentMode {
+  return (reference ?? "").toLowerCase().startsWith("delivery") ? "Delivery" : "Pickup";
+}
+
+const modeWords: Record<
+  FulfilmentMode,
+  { noun: string; waiting: string; notYet: string; action: string; confirmTitle: string }
+> = {
+  Pickup: {
+    noun: "pickup",
+    waiting: "Awaiting pickup",
+    notYet: "Not collected yet",
+    action: "Mark as picked up",
+    confirmTitle: "Confirm pickup",
+  },
+  Delivery: {
+    noun: "delivery",
+    waiting: "Awaiting delivery",
+    notYet: "Not delivered yet",
+    action: "Mark as delivered",
+    confirmTitle: "Confirm delivery",
+  },
+};
+
 function normalizeData(value: Partial<StockData> | null | undefined): StockData {
   return {
     products: value?.products ?? [],
@@ -587,6 +616,7 @@ export default function App() {
         fromName: string;
         date: string;
         reference: string;
+        mode: FulfilmentMode;
         notes: string;
         lines: { product: string; qty: number }[];
         total: number;
@@ -606,6 +636,7 @@ export default function App() {
           fromName: data.holders.find((holder) => holder.id === movement.from_holder_id)?.name ?? "",
           date: movement.movement_date,
           reference: movement.reference ?? "",
+          mode: fulfilmentModeOf(movement.reference),
           notes: movement.notes ?? "",
           lines: [] as { product: string; qty: number }[],
           total: 0,
@@ -1270,7 +1301,7 @@ export default function App() {
   // Confirm a pending pickup: the stock has been collected, so it now lands on
   // the electrician's count. The tracking link is stamped on every line of the
   // batch as the proof of delivery.
-  async function confirmPendingPickup(ids: string[], trackingLink: string) {
+  async function confirmPendingPickup(ids: string[], trackingLink: string, mode: FulfilmentMode) {
     if (!ids.length) return;
     setSubmitting(true);
     setError(null);
@@ -1296,9 +1327,15 @@ export default function App() {
           ),
         }));
       }
-      setMessage("Pickup confirmed. Stock added to the electrician.");
+      setMessage(
+        `${mode === "Delivery" ? "Delivery" : "Pickup"} confirmed. Stock added to the electrician.`,
+      );
     } catch (confirmError) {
-      setError(confirmError instanceof Error ? confirmError.message : "Could not confirm the pickup.");
+      setError(
+        confirmError instanceof Error
+          ? confirmError.message
+          : `Could not confirm the ${modeWords[mode].noun}.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1320,16 +1357,17 @@ export default function App() {
       return;
     }
     setConfirmTrackingError(null);
-    await confirmPendingPickup(confirmBatch.ids, link);
+    await confirmPendingPickup(confirmBatch.ids, link, confirmBatch.mode);
     setConfirmBatch(null);
     setConfirmTracking("");
   }
 
   // Cancel a pending pickup: it never happened, so the stock goes back to the
   // warehouse by removing the movements entirely.
-  async function cancelPendingPickup(ids: string[]) {
+  async function cancelPendingPickup(batch: PendingPickupBatch) {
+    const ids = batch.ids;
     if (!ids.length) return;
-    if (!window.confirm("Cancel this pending pickup? The stock returns to the warehouse.")) return;
+    if (!window.confirm(`Cancel this pending ${modeWords[batch.mode].noun}? The stock returns to the warehouse.`)) return;
     setSubmitting(true);
     setError(null);
     setMessage(null);
@@ -1349,9 +1387,13 @@ export default function App() {
           movements: current.movements.filter((movement) => !ids.includes(movement.id)),
         }));
       }
-      setMessage("Pending pickup cancelled. Stock returned to the warehouse.");
+      setMessage(`Pending ${modeWords[batch.mode].noun} cancelled. Stock returned to the warehouse.`);
     } catch (cancelError) {
-      setError(cancelError instanceof Error ? cancelError.message : "Could not cancel the pending pickup.");
+      setError(
+        cancelError instanceof Error
+          ? cancelError.message
+          : `Could not cancel the pending ${modeWords[batch.mode].noun}.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1524,18 +1566,41 @@ export default function App() {
       .filter((product) => thisWeekGroups.has(product.id))
       .map((product) => ({ product: product.name, qty: thisWeekGroups.get(product.id) ?? 0 }));
 
+    // Stock released to this electrician that has not been confirmed yet. It
+    // sits on neither count, so the report calls it out separately.
+    const inTransit = data.movements
+      .filter((m) => m.to_holder_id === electrician.id && isPendingMovement(m))
+      .sort((a, b) => b.movement_date.localeCompare(a.movement_date))
+      .map((m) => ({
+        date: formatDate(m.movement_date),
+        mode: fulfilmentModeOf(m.reference),
+        product: productName(m.product_id),
+        from: holderName(m.from_holder_id),
+        qty: m.quantity,
+        tracking: m.tracking ?? "",
+      }));
+
     const asOfDate = formatDate(today());
     const reportData: StockReportInput = {
       electricianName: electrician.name,
       asOfDate,
       remaining,
       received,
+      inTransit,
       returned,
       installsByWeek,
       lost,
     };
 
-    return { electrician, reportData, asOfDate, weekEndingLabel: formatWeekEnding(thisWeek), remaining, installedThisWeek };
+    return {
+      electrician,
+      reportData,
+      asOfDate,
+      weekEndingLabel: formatWeekEnding(thisWeek),
+      remaining,
+      installedThisWeek,
+      inTransit,
+    };
   }
 
   function openComposeStockReport() {
@@ -1552,6 +1617,7 @@ export default function App() {
       weekEndingLabel: report.weekEndingLabel,
       remaining: report.remaining,
       installedThisWeek: report.installedThisWeek,
+      inTransit: report.inTransit,
     });
     const pdf = buildReportPdfBase64(report.reportData, logoDataUri || undefined);
 
@@ -1622,9 +1688,22 @@ export default function App() {
         };
       });
 
+    // Already off this warehouse's holding but not confirmed as collected, so
+    // it is listed separately rather than silently missing.
+    const inTransit = data.movements
+      .filter((movement) => movement.from_holder_id === warehouse.id && isPendingMovement(movement))
+      .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
+      .map((movement) => ({
+        date: formatDate(movement.movement_date),
+        mode: fulfilmentModeOf(movement.reference),
+        product: productName(movement.product_id),
+        to: holderName(movement.to_holder_id),
+        qty: movement.quantity,
+      }));
+
     const asOfDate = formatDate(today());
     const sinceDate = since ? formatDate(since) : "the beginning";
-    const reportData = { warehouseName: warehouse.name, asOfDate, sinceDate, onHand, movements };
+    const reportData = { warehouseName: warehouse.name, asOfDate, sinceDate, onHand, movements, inTransit };
     return { warehouse, reportData, asOfDate, sinceDate };
   }
 
@@ -1641,6 +1720,7 @@ export default function App() {
       asOfDate: report.asOfDate,
       sinceDate: report.sinceDate,
       onHand: report.reportData.onHand,
+      inTransit: report.reportData.inTransit,
     });
     const pdf = buildWarehouseReportPdfBase64(report.reportData, logoDataUri || undefined);
 
@@ -2874,10 +2954,10 @@ function ConfirmPickupModal({
       <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h2>Confirm pickup</h2>
+            <h2>{modeWords[batch.mode].confirmTitle}</h2>
             <p>
-              {batch.total.toLocaleString()} unit{batch.total === 1 ? "" : "s"} to {batch.holderName}, released{" "}
-              {formatDate(batch.date)}.
+              {batch.total.toLocaleString()} unit{batch.total === 1 ? "" : "s"} to {batch.holderName},{" "}
+              {batch.mode === "Delivery" ? "sent" : "released"} {formatDate(batch.date)}.
             </p>
           </div>
           <button className="icon-button" type="button" onClick={onCancel} aria-label="Close">
@@ -2908,8 +2988,8 @@ function ConfirmPickupModal({
           </label>
           {error ? <p className="field-error">{error}</p> : null}
           <p className="field-hint">
-            Required. It is saved against every line of this pickup and shows as a Tracking link in the movement
-            history.
+            Required. It is saved against every line of this {modeWords[batch.mode].noun} and shows as a Tracking link in
+            the movement history.
           </p>
         </div>
 
@@ -2924,7 +3004,7 @@ function ConfirmPickupModal({
             disabled={saving || !tracking.trim()}
           >
             <CheckCircle2 size={17} />
-            {saving ? "Saving…" : "Confirm pickup"}
+            {saving ? "Saving…" : modeWords[batch.mode].confirmTitle}
           </button>
         </div>
       </div>
@@ -3040,6 +3120,7 @@ type PendingPickupBatch = {
   fromName: string;
   date: string;
   reference: string;
+  mode: FulfilmentMode;
   notes: string;
   lines: { product: string; qty: number }[];
   total: number;
@@ -3087,7 +3168,7 @@ function DashboardView({
   pendingPickups: PendingPickupBatch[];
   pendingTotal: number;
   onConfirmPickup: (batch: PendingPickupBatch) => void;
-  onCancelPickup: (ids: string[]) => void;
+  onCancelPickup: (batch: PendingPickupBatch) => void;
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
   const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
@@ -3123,10 +3204,10 @@ function DashboardView({
               <Truck size={20} />
             </span>
             <div>
-              <h2>Pending Pickup</h2>
+              <h2>In Transit</h2>
               <p>
-                {pendingTotal.toLocaleString()} unit{pendingTotal === 1 ? "" : "s"} released from the warehouse,
-                waiting to be collected. Confirm once the electrician has it.
+                {pendingTotal.toLocaleString()} unit{pendingTotal === 1 ? "" : "s"} released from the warehouse.
+                Confirm each one once the electrician has it.
               </p>
             </div>
           </div>
@@ -3136,7 +3217,9 @@ function DashboardView({
                 <div className="pending-main">
                   <div className="pending-top">
                     <strong>{batch.holderName}</strong>
-                    <span className="status-chip pending-chip">Pending pickup</span>
+                    <span className={`status-chip ${batch.mode === "Delivery" ? "delivery-chip" : "pending-chip"}`}>
+                      {modeWords[batch.mode].waiting}
+                    </span>
                   </div>
                   <span className="pending-sub">
                     {batch.lines.map((line) => `${line.qty} × ${line.product}`).join(" · ")}
@@ -3155,13 +3238,13 @@ function DashboardView({
                     onClick={() => onConfirmPickup(batch)}
                   >
                     <CheckCircle2 size={16} />
-                    Mark as picked up
+                    {modeWords[batch.mode].action}
                   </button>
                   <button
                     className="danger-button ghost sm"
                     type="button"
                     disabled={submitting}
-                    onClick={() => onCancelPickup(batch.ids)}
+                    onClick={() => onCancelPickup(batch)}
                   >
                     Cancel
                   </button>
@@ -4740,7 +4823,11 @@ function LedgerView({
                     <span className="ledger-main">
                       <strong>
                         {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
-                        {isPendingMovement(movement) ? <em className="pending-tag">Pending pickup</em> : null}
+                        {isPendingMovement(movement) ? (
+                          <em className="pending-tag">
+                            In transit · {modeWords[fulfilmentModeOf(movement.reference)].waiting}
+                          </em>
+                        ) : null}
                       </strong>
                       <span className="ledger-route">
                         {routeText(movement)}
@@ -4898,7 +4985,7 @@ function ElectriciansView({
   onSendPickupSlip: () => void;
   pendingPickups: PendingPickupBatch[];
   onConfirmPickup: (batch: PendingPickupBatch) => void;
-  onCancelPickup: (ids: string[]) => void;
+  onCancelPickup: (batch: PendingPickupBatch) => void;
   onEmailReport: () => void;
   onDownloadReport: () => void;
   onViewHistory: (electricianId: string) => void;
@@ -5209,14 +5296,18 @@ function ElectriciansView({
                     <div className="el-pending-main">
                       <div className="el-pending-top">
                         <Truck size={17} />
-                        <strong>{batch.total.toLocaleString()} in transit</strong>
-                        <span className="status-chip pending-chip">Not collected yet</span>
+                        <strong>
+                          {batch.total.toLocaleString()} in transit · {batch.mode}
+                        </strong>
+                        <span className={`status-chip ${batch.mode === "Delivery" ? "delivery-chip" : "pending-chip"}`}>
+                          {modeWords[batch.mode].notYet}
+                        </span>
                       </div>
                       <span className="el-pending-sub">
                         {batch.lines.map((line) => `${line.qty} × ${line.product}`).join(" · ")}
                       </span>
                       <span className="el-pending-meta">
-                        Released {formatDate(batch.date)}
+                        {batch.mode === "Delivery" ? "Sent" : "Released"} {formatDate(batch.date)}
                         {batch.fromName ? ` from ${batch.fromName}` : ""}
                         {batch.reference ? ` · ${batch.reference}` : ""}
                       </span>
@@ -5235,7 +5326,7 @@ function ElectriciansView({
                         className="danger-button ghost sm"
                         type="button"
                         disabled={submitting}
-                        onClick={() => onCancelPickup(batch.ids)}
+                        onClick={() => onCancelPickup(batch)}
                       >
                         Cancel
                       </button>

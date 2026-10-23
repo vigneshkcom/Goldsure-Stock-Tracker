@@ -4412,3 +4412,15 @@ td.transit-figure {
   color: var(--warning);
   font-weight: 700;
 }
+
+/* Deliveries read purple so a delivery is never mistaken for a pickup. */
+.status-chip.delivery-chip {
+  background: var(--violet, #a25ddc);
+  color: #ffffff;
+  border: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  white-space: nowrap;
+}

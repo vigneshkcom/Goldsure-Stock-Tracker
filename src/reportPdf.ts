@@ -84,6 +84,16 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     y + 26,
   );
 
+  if (input.inTransit.length) {
+    y = section(
+      doc,
+      "In Transit - Released, Not Collected Yet",
+      ["Date released", "Type", "Product", "From", "Qty"],
+      input.inTransit.map((row) => [row.date, row.mode, row.product, row.from || "-", String(row.qty)]),
+      y + 26,
+    );
+  }
+
   y = section(
     doc,
     "Stock Returned To Warehouse (all dates)",
@@ -273,6 +283,16 @@ export function buildWarehouseReportPdfBase64(input: WarehouseReportInput, logo?
     input.onHand.map((row) => [row.product, String(row.good), String(row.faulty)]),
     y,
   );
+
+  if (input.inTransit.length) {
+    y = section(
+      doc,
+      "Released, Not Collected Yet",
+      ["Date released", "Type", "Product", "To", "Qty"],
+      input.inTransit.map((row) => [row.date, row.mode, row.product, row.to || "-", String(row.qty)]),
+      y + 26,
+    );
+  }
 
   section(
     doc,

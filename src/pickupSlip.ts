@@ -196,6 +196,8 @@ export type StockReportInput = {
   asOfDate: string;
   remaining: { product: string; good: number; faulty: number }[];
   received: { date: string; type: string; product: string; from: string; qty: number }[];
+  // Released by the warehouse but not confirmed as collected yet.
+  inTransit: { date: string; mode: string; product: string; from: string; qty: number; tracking: string }[];
   returned: { date: string; product: string; condition: string; to: string; qty: number }[];
   installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
   lost: { date: string; product: string; qty: number; charged: string }[];
@@ -207,6 +209,7 @@ export type ReportEmailBodyInput = {
   weekEndingLabel: string;
   remaining: { product: string; good: number; faulty: number }[];
   installedThisWeek: { product: string; qty: number }[];
+  inTransit: { date: string; mode: string; product: string; qty: number }[];
 };
 
 export type PackRequestInput = {
@@ -250,6 +253,13 @@ export function buildReportEmailBodyInner(input: ReportEmailBodyInput): string {
     )
     .join("");
 
+  const inTransitRows = input.inTransit
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.mode)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
   const installedRows = input.installedThisWeek.length
     ? input.installedThisWeek
         .map(
@@ -265,6 +275,17 @@ export function buildReportEmailBodyInner(input: ReportEmailBodyInput): string {
       <tr><th style="${head}">Product</th><th style="${head}">On hand</th></tr>
       ${onHandRows}
     </table>
+
+    ${
+      input.inTransit.length
+        ? `<h2 style="font-size:1.05rem;margin:20px 0 6px;">On its way to you</h2>
+    <table style="border-collapse:collapse;font-size:13px;min-width:320px;">
+      <tr><th style="${head}">Date released</th><th style="${head}">Type</th><th style="${head}">Product</th><th style="${head}">Qty</th></tr>
+      ${inTransitRows}
+    </table>
+    <p style="font-size:13px;color:#555;margin:6px 0 0;">Not on your stock count yet. It is added once collection is confirmed.</p>`
+        : ""
+    }
 
     <h2 style="font-size:1.05rem;margin:20px 0 6px;">Installed &mdash; ${escapeHtml(input.weekEndingLabel)}</h2>
     ${
@@ -295,6 +316,9 @@ export type WarehouseReportInput = {
     counterpart: string;
     qty: number;
   }[];
+  // Already released and off the holding above, but not yet confirmed as
+  // collected or delivered.
+  inTransit: { date: string; mode: string; product: string; to: string; qty: number }[];
   logoUrl?: string;
 };
 
@@ -303,11 +327,19 @@ export type WarehouseReportEmailBodyInput = {
   asOfDate: string;
   sinceDate: string;
   onHand: { product: string; good: number; faulty: number }[];
+  inTransit: { date: string; mode: string; product: string; to: string; qty: number }[];
 };
 
 // Short email body: current holding only. Full movement detail is in the
 // attached PDF, so the warehouse can check the summary and dig in if needed.
 export function buildWarehouseReportEmailBodyInner(input: WarehouseReportEmailBodyInput): string {
+  const transitRows = input.inTransit
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.mode)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell}">${escapeHtml(row.to)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
+    )
+    .join("");
+
   const rows = input.onHand
     .map(
       (row) =>
@@ -321,6 +353,16 @@ export function buildWarehouseReportEmailBodyInner(input: WarehouseReportEmailBo
       <tr><th style="${head}">Product</th><th style="${head}">Good</th><th style="${head}">Faulty</th></tr>
       ${rows}
     </table>
+    ${
+      input.inTransit.length
+        ? `<h2 style="font-size:1.05rem;margin:20px 0 6px;">Released, not collected yet</h2>
+    <table style="border-collapse:collapse;font-size:13px;min-width:340px;">
+      <tr><th style="${head}">Date released</th><th style="${head}">Type</th><th style="${head}">Product</th><th style="${head}">To</th><th style="${head}">Qty</th></tr>
+      ${transitRows}
+    </table>
+    <p style="font-size:13px;color:#555;margin:6px 0 0;">Already taken off the holding above.</p>`
+        : ""
+    }
     <p style="font-size:13px;color:#555;margin:16px 0 0;">Stock reconciled by Goldsure as of ${escapeHtml(input.asOfDate)}. A full movement history since ${escapeHtml(input.sinceDate)} is attached as a PDF, for your information.</p>`;
 }
 
