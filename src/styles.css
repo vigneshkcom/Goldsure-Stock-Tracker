@@ -4547,3 +4547,96 @@ td.transit-figure {
   padding: 0 12px;
   font-size: 0.82rem;
 }
+
+/* Product swap: move units from one product to another for an electrician,
+   for when a different product was physically fitted. Sits under the
+   in-transit block on their page. */
+.swap-box {
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  overflow: hidden;
+}
+
+.swap-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+}
+
+.swap-head svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.swap-head h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.swap-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.swap-head .ghost-button {
+  margin-left: auto;
+}
+
+.swap-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--rose);
+  background: #fff5f6;
+  border-top: 1px solid var(--line);
+}
+
+.swap-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft, #f6f7fb);
+}
+
+.swap-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.swap-form select,
+.swap-form input {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+  background: var(--card, #ffffff);
+}
+
+.swap-form input {
+  width: 80px;
+}
+
+.swap-arrow {
+  color: var(--muted);
+  margin-bottom: 9px;
+}

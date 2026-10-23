@@ -1188,7 +1188,9 @@ export default function App() {
       const available = getBalance(goodBalanceMap, electrician.id, line.productId);
       if (available < line.quantity) {
         const productName = activeProducts.find((product) => product.id === line.productId)?.name ?? "product";
-        setError(`${electrician.name} only has ${available} of ${productName} to install.`);
+        setError(
+          `${electrician.name} only has ${available} of ${productName} to install. If a different product was fitted, use Product swap on this page to move the units across first.`,
+        );
         return;
       }
     }
@@ -1218,6 +1220,79 @@ export default function App() {
     if (ok) {
       setInstallQty({});
       setInstallReference("");
+    }
+  }
+
+  // An electrician can install more of one product than they were issued when
+  // a different product was physically fitted — a hardwired alarm in place of
+  // a battery one, say. The count is corrected by swapping the units across,
+  // which keeps the overall quantity honest instead of writing stock off.
+  async function handleSwapProduct(holderId: string, fromProductId: string, toProductId: string, quantity: number) {
+    const holder = data.holders.find((item) => item.id === holderId);
+    const fromProduct = data.products.find((item) => item.id === fromProductId);
+    const toProduct = data.products.find((item) => item.id === toProductId);
+    if (!holder || !fromProduct || !toProduct) return;
+    if (fromProduct.id === toProduct.id) {
+      setError("Pick a different product to take the stock from.");
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setError("Enter how many units to swap.");
+      return;
+    }
+    const available = getBalance(goodBalanceMap, holder.id, fromProduct.id);
+    if (available < quantity) {
+      setError(`${holder.name} only has ${available.toLocaleString()} ${fromProduct.name} to swap.`);
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    const date = today();
+    const createdAt = new Date().toISOString();
+    const notes = `Product swap: ${quantity} x ${fromProduct.name} fitted in place of ${toProduct.name}.`;
+    const base = {
+      movement_date: date,
+      movement_type: "adjustment" as MovementType,
+      product_condition: "good" as ProductCondition,
+      movement_status: "confirmed" as const,
+      warranty_job_id: null,
+      job_number: null,
+      customer_name: null,
+      reference: "Product swap",
+      tracking: null,
+      notes,
+      created_at: createdAt,
+    };
+
+    try {
+      await saveMovements([
+        {
+          ...base,
+          id: crypto.randomUUID(),
+          product_id: fromProduct.id,
+          quantity,
+          from_holder_id: holder.id,
+          to_holder_id: null,
+        },
+        {
+          ...base,
+          id: crypto.randomUUID(),
+          product_id: toProduct.id,
+          quantity,
+          from_holder_id: null,
+          to_holder_id: holder.id,
+        },
+      ]);
+      setMessage(
+        `Swapped ${quantity.toLocaleString()} ${fromProduct.name} to ${toProduct.name} for ${holder.name}.`,
+      );
+    } catch (swapError) {
+      setError(swapError instanceof Error ? swapError.message : "Could not record the swap.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -2764,6 +2839,7 @@ export default function App() {
               onGiveStock={handleGiveStock}
               onRecordInstall={handleRecordInstall}
               onRecordLoss={handleRecordLoss}
+              onSwapProduct={handleSwapProduct}
               onToggleLossCharged={toggleLossCharged}
               onDeleteMovement={deleteMovement}
               onDownloadPickupSlip={handleDownloadPickupSlip}
@@ -4933,6 +5009,7 @@ function ElectriciansView({
   onGiveStock,
   onRecordInstall,
   onRecordLoss,
+  onSwapProduct,
   onToggleLossCharged,
   onDeleteMovement,
   onDownloadPickupSlip,
@@ -4989,6 +5066,7 @@ function ElectriciansView({
   onGiveStock: (event: FormEvent<HTMLFormElement>) => void;
   onRecordInstall: (event: FormEvent<HTMLFormElement>) => void;
   onRecordLoss: (event: FormEvent<HTMLFormElement>) => void;
+  onSwapProduct: (holderId: string, fromProductId: string, toProductId: string, quantity: number) => void;
   onToggleLossCharged: (movement: Movement) => void;
   onDeleteMovement: (movementId: string) => void;
   onDownloadPickupSlip: () => void;
@@ -5005,6 +5083,11 @@ function ElectriciansView({
     "overview",
   );
   const [installWeek, setInstallWeek] = useState<string>("all");
+  // The product swap form: which product gives up units, which receives them.
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapFromId, setSwapFromId] = useState("");
+  const [swapToId, setSwapToId] = useState("");
+  const [swapQty, setSwapQty] = useState("1");
   const [rosterTerm, setRosterTerm] = useState("");
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const initialsOf = (name: string) =>
@@ -5060,6 +5143,13 @@ function ElectriciansView({
     : 0;
   const electricianPending = electrician
     ? pendingPickups.filter((batch) => batch.holderId === electrician.id)
+    : [];
+  // Products this electrician has installed more of than they were issued.
+  // Nearly always a substitution: a different product was physically fitted.
+  const shortfalls = electrician
+    ? activeProducts
+        .map((product) => ({ product, balance: getBalance(goodBalanceMap, electrician.id, product.id) }))
+        .filter((row) => row.balance < 0)
     : [];
   // In-transit units for this electrician, split by product, so each product
   // tile can show what is still on its way.
@@ -5358,6 +5448,90 @@ function ElectriciansView({
                     ))}
                   </div>
                 ) : null}
+
+                {/* A different product often gets fitted than the one
+                    recorded, which leaves one product short and another over.
+                    Swapping the units across keeps the total honest and lets
+                    the install be recorded. */}
+                <div className="swap-box">
+                  <div className="swap-head">
+                    <RefreshCw size={16} />
+                    <h3>Product swap</h3>
+                    <span className="swap-note">
+                      Fitted a different product than the one recorded? Move the units across.
+                    </span>
+                    <button className="ghost-button sm" type="button" onClick={() => setSwapOpen(!swapOpen)}>
+                      {swapOpen ? "Close" : "Swap stock"}
+                    </button>
+                  </div>
+
+                  {shortfalls.length ? (
+                    <div className="swap-alert">
+                      <AlertTriangle size={15} />
+                      {shortfalls
+                        .map(
+                          (row) =>
+                            `${row.product.sku ?? row.product.name} is ${Math.abs(row.balance).toLocaleString()} below zero`,
+                        )
+                        .join(" · ")}
+                    </div>
+                  ) : null}
+
+                  {swapOpen ? (
+                    <div className="swap-form">
+                      <label>
+                        Units
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={swapQty}
+                          onChange={(event) => setSwapQty(event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Take from
+                        <select value={swapFromId} onChange={(event) => setSwapFromId(event.target.value)}>
+                          <option value="">Choose a product</option>
+                          {activeProducts.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.sku ?? product.name} (
+                              {getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <ArrowRight size={16} className="swap-arrow" />
+                      <label>
+                        Add to
+                        <select value={swapToId} onChange={(event) => setSwapToId(event.target.value)}>
+                          <option value="">Choose a product</option>
+                          {activeProducts
+                            .filter((product) => product.id !== swapFromId)
+                            .map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.sku ?? product.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <button
+                        className="primary-button sm"
+                        type="button"
+                        disabled={
+                          submitting || !swapFromId || !swapToId || !Number.isInteger(Number(swapQty)) || Number(swapQty) <= 0
+                        }
+                        onClick={() => {
+                          onSwapProduct(electrician.id, swapFromId, swapToId, Number(swapQty));
+                          setSwapQty("1");
+                        }}
+                      >
+                        <RefreshCw size={16} />
+                        Swap
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
 
                 <div className="el-tabbody">
                   {tab === "overview" ? (
