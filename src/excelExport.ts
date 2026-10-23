@@ -36,7 +36,11 @@ function calculateBalanceMap(data: StockData, condition: ProductCondition) {
 
   data.movements.forEach((movement) => {
     if (movementCondition(movement) !== condition) return;
-    if (movement.to_holder_id) add(movement.to_holder_id, movement.product_id, movement.quantity);
+    // Matches the app: the source is debited as soon as stock is released, but
+    // the destination is only credited once the pickup is confirmed.
+    if (movement.to_holder_id && movement.movement_status !== "pending") {
+      add(movement.to_holder_id, movement.product_id, movement.quantity);
+    }
     if (movement.from_holder_id) add(movement.from_holder_id, movement.product_id, -movement.quantity);
   });
 
@@ -206,6 +210,7 @@ export function buildStockTrackerWorkbook(data: StockData, exportedAt = new Date
     [
       { header: "Movement Date", key: "movementDate", width: 16, numberFormat: "dd mmm yyyy" },
       { header: "Movement Type", key: "movementType", width: 18 },
+      { header: "Status", key: "status", width: 14 },
       { header: "Condition", key: "condition", width: 12 },
       { header: "Product", key: "product", width: 34 },
       { header: "SKU", key: "sku", width: 18 },
@@ -229,6 +234,7 @@ export function buildStockTrackerWorkbook(data: StockData, exportedAt = new Date
       .map((movement) => ({
         movementDate: dateValue(movement.movement_date),
         movementType: movement.movement_type,
+        status: movement.movement_status === "pending" ? "in transit" : "confirmed",
         condition: movementCondition(movement),
         product: productsById.get(movement.product_id)?.name ?? "Unknown product",
         sku: productsById.get(movement.product_id)?.sku ?? null,

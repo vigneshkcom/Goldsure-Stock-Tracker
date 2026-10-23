@@ -4424,3 +4424,126 @@ td.transit-figure {
   padding: 2px 8px;
   white-space: nowrap;
 }
+
+/* In-transit box on an electrician's page. One quiet container with a row per
+   outstanding slip, so several at once stay readable. Replaces the stacked
+   cream banners. */
+.transit-box {
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  overflow: hidden;
+}
+
+.transit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fffaf2;
+  border-bottom: 1px solid var(--line);
+}
+
+.transit-head svg {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.transit-head h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.transit-count {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.transit-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+}
+
+.transit-item + .transit-item {
+  border-top: 1px solid var(--line);
+}
+
+.transit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.transit-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.transit-mode {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: var(--warning);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+
+.transit-mode.delivery {
+  background: var(--violet, #a25ddc);
+}
+
+.transit-when {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.transit-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.transit-qty {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: var(--surface-soft, #f6f7fb);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+}
+
+.transit-qty strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.transit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ghost-button.sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}

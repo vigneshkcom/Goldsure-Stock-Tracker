@@ -618,7 +618,7 @@ export default function App() {
         reference: string;
         mode: FulfilmentMode;
         notes: string;
-        lines: { product: string; qty: number }[];
+        lines: { product: string; sku: string; qty: number }[];
         total: number;
       }
     >();
@@ -638,12 +638,14 @@ export default function App() {
           reference: movement.reference ?? "",
           mode: fulfilmentModeOf(movement.reference),
           notes: movement.notes ?? "",
-          lines: [] as { product: string; qty: number }[],
+          lines: [] as { product: string; sku: string; qty: number }[],
           total: 0,
         };
+        const product = data.products.find((item) => item.id === movement.product_id);
         batch.ids.push(movement.id);
         batch.lines.push({
-          product: data.products.find((product) => product.id === movement.product_id)?.name ?? "Unknown product",
+          product: product?.name ?? "Unknown product",
+          sku: product?.sku ?? product?.name ?? "Unknown",
           qty: movement.quantity,
         });
         batch.total += movement.quantity;
@@ -1500,8 +1502,12 @@ export default function App() {
 
     // All good stock ever received by this electrician, oldest first, with exact
     // dates — so a report run in a later month still shows earlier issuances.
+    // Only stock actually in their hands. Anything still pending is listed in
+    // its own In Transit section instead, so it is never counted as received.
     const received = data.movements
-      .filter((m) => m.to_holder_id === electrician.id && getMovementCondition(m) === "good")
+      .filter(
+        (m) => m.to_holder_id === electrician.id && getMovementCondition(m) === "good" && !isPendingMovement(m),
+      )
       .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
       .map((m) => ({
         date: formatDate(m.movement_date),
@@ -1679,7 +1685,11 @@ export default function App() {
         const counterpart = direction === "in" ? holderName(movement.from_holder_id) : holderName(movement.to_holder_id);
         return {
           date: formatDate(movement.movement_date),
-          type: movementLabels[movement.movement_type],
+          // Flag releases that have not been collected yet, so this history
+          // cannot be mistaken for stock that has already landed.
+          type: isPendingMovement(movement)
+            ? `${movementLabels[movement.movement_type]} (in transit)`
+            : movementLabels[movement.movement_type],
           condition: conditionLabels[getMovementCondition(movement)],
           product: productName(movement.product_id),
           direction,
@@ -3122,7 +3132,7 @@ type PendingPickupBatch = {
   reference: string;
   mode: FulfilmentMode;
   notes: string;
-  lines: { product: string; qty: number }[];
+  lines: { product: string; sku: string; qty: number }[];
   total: number;
 };
 
@@ -5289,50 +5299,65 @@ function ElectriciansView({
                   ))}
                 </div>
 
-                {/* Stock already released to this electrician. Confirming here
-                    saves a trip to the dashboard. */}
-                {electricianPending.map((batch) => (
-                  <div className="el-pending" key={batch.key}>
-                    <div className="el-pending-main">
-                      <div className="el-pending-top">
-                        <Truck size={17} />
-                        <strong>
-                          {batch.total.toLocaleString()} in transit · {batch.mode}
-                        </strong>
-                        <span className={`status-chip ${batch.mode === "Delivery" ? "delivery-chip" : "pending-chip"}`}>
-                          {modeWords[batch.mode].notYet}
-                        </span>
+                {/* Stock already released to this electrician. One quiet box
+                    holds every outstanding slip, so several at once stay
+                    readable and can be confirmed without leaving the page. */}
+                {electricianPending.length ? (
+                  <div className="transit-box">
+                    <div className="transit-head">
+                      <Truck size={16} />
+                      <h3>In transit</h3>
+                      <span className="transit-count">
+                        {totalPending.toLocaleString()} units · {electricianPending.length} slip
+                        {electricianPending.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    {electricianPending.map((batch) => (
+                      <div className="transit-item" key={batch.key}>
+                        <div className="transit-info">
+                          <div className="transit-line">
+                            <span
+                              className={`transit-mode${batch.mode === "Delivery" ? " delivery" : ""}`}
+                            >
+                              {batch.mode}
+                            </span>
+                            <span className="transit-when">
+                              {batch.mode === "Delivery" ? "Sent" : "Released"} {formatDate(batch.date)}
+                              {batch.fromName ? ` · ${batch.fromName}` : ""}
+                            </span>
+                          </div>
+                          <div className="transit-lines">
+                            {batch.lines.map((line) => (
+                              <span className="transit-qty" key={line.sku}>
+                                <strong>{line.qty.toLocaleString()}</strong>
+                                {line.sku}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="transit-actions">
+                          <button
+                            className="primary-button sm"
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => onConfirmPickup(batch)}
+                          >
+                            <CheckCircle2 size={16} />
+                            {electrician.name.split(" ")[0]} has it
+                          </button>
+                          <button
+                            className="ghost-button sm"
+                            type="button"
+                            disabled={submitting}
+                            onClick={() => onCancelPickup(batch)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                      <span className="el-pending-sub">
-                        {batch.lines.map((line) => `${line.qty} × ${line.product}`).join(" · ")}
-                      </span>
-                      <span className="el-pending-meta">
-                        {batch.mode === "Delivery" ? "Sent" : "Released"} {formatDate(batch.date)}
-                        {batch.fromName ? ` from ${batch.fromName}` : ""}
-                        {batch.reference ? ` · ${batch.reference}` : ""}
-                      </span>
-                    </div>
-                    <div className="pending-actions">
-                      <button
-                        className="primary-button sm"
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => onConfirmPickup(batch)}
-                      >
-                        <CheckCircle2 size={16} />
-                        {electrician.name.split(" ")[0]} has it
-                      </button>
-                      <button
-                        className="danger-button ghost sm"
-                        type="button"
-                        disabled={submitting}
-                        onClick={() => onCancelPickup(batch)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                ) : null}
 
                 <div className="el-tabbody">
                   {tab === "overview" ? (
