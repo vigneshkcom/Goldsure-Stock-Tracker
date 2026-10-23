@@ -2,6 +2,11 @@ export type HolderType = "warehouse" | "technician" | "other";
 
 export type ProductCondition = "good" | "faulty";
 
+// A movement is "pending" between releasing stock from a warehouse and the
+// electrician actually collecting it. Pending stock has already left the
+// warehouse but has not yet landed on the electrician's count.
+export type MovementStatus = "pending" | "confirmed";
+
 export type WarrantyJobStatus = "open" | "posted" | "completed" | "cancelled";
 
 export type WarrantyJobType = "warranty" | "oneoff";
@@ -44,6 +49,7 @@ export type Movement = {
   movement_date: string;
   movement_type: MovementType;
   product_condition?: ProductCondition | null;
+  movement_status?: MovementStatus | null;
   product_id: string;
   quantity: number;
   from_holder_id: string | null;

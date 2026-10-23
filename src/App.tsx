@@ -141,6 +141,13 @@ function getMovementCondition(movement: Movement): ProductCondition {
   return movement.product_condition ?? "good";
 }
 
+// Stock released to an electrician but not yet collected. It has already left
+// the warehouse, so it is deducted there, but it is not on the electrician's
+// count until the pickup is confirmed.
+function isPendingMovement(movement: Movement): boolean {
+  return movement.movement_status === "pending";
+}
+
 function normalizeData(value: Partial<StockData> | null | undefined): StockData {
   return {
     products: value?.products ?? [],
@@ -148,6 +155,7 @@ function normalizeData(value: Partial<StockData> | null | undefined): StockData 
     movements: (value?.movements ?? []).map((movement) => ({
       ...movement,
       product_condition: movement.product_condition ?? "good",
+      movement_status: movement.movement_status ?? "confirmed",
       warranty_job_id: movement.warranty_job_id ?? null,
       job_number: movement.job_number ?? null,
       customer_name: movement.customer_name ?? null,
@@ -269,7 +277,10 @@ function calculateBalances(movements: Movement[], condition: ProductCondition): 
   movements.forEach((movement) => {
     if (getMovementCondition(movement) !== condition) return;
 
-    if (movement.to_holder_id) {
+    // The source is debited as soon as the stock is released, so warehouse
+    // counts stay live. The destination is only credited once the movement is
+    // confirmed — until then the stock is in transit, on nobody's count.
+    if (movement.to_holder_id && !isPendingMovement(movement)) {
       add(movement.to_holder_id, movement.product_id, movement.quantity);
     }
 
@@ -499,6 +510,16 @@ export default function App() {
     [activeHolders, activeProducts, goodBalanceMap],
   );
 
+  // Pending pickups sit on nobody's count, so they are tracked separately to
+  // keep the product totals adding up.
+  const pendingByProduct = useMemo(() => {
+    const byProduct = new Map<string, number>();
+    data.movements.filter(isPendingMovement).forEach((movement) => {
+      byProduct.set(movement.product_id, (byProduct.get(movement.product_id) ?? 0) + movement.quantity);
+    });
+    return byProduct;
+  }, [data.movements]);
+
   const productTotals = useMemo(
     () =>
       activeProducts.map((product) => {
@@ -514,15 +535,17 @@ export default function App() {
           (total, holder) => total + getBalance(faultyBalanceMap, holder.id, product.id),
           0,
         );
+        const transitTotal = pendingByProduct.get(product.id) ?? 0;
         return {
           product,
           warehouseTotal,
           fieldTotal,
+          transitTotal,
           faultyTotal,
-          total: warehouseTotal + fieldTotal,
+          total: warehouseTotal + fieldTotal + transitTotal,
         };
       }),
-    [activeProducts, goodBalanceMap, faultyBalanceMap, technicians, warehouses],
+    [activeProducts, goodBalanceMap, faultyBalanceMap, pendingByProduct, technicians, warehouses],
   );
 
   const totalStock = productTotals.reduce((total, row) => total + row.total, 0);
@@ -546,6 +569,55 @@ export default function App() {
     [data.movements],
   );
   const negativeBalances = goodBalances.filter((row) => row.quantity < 0);
+
+  // Pending pickups, grouped into one batch per slip (same electrician, release
+  // date and reference), newest first.
+  const pendingPickups = useMemo(() => {
+    const batches = new Map<
+      string,
+      {
+        key: string;
+        ids: string[];
+        holderId: string;
+        holderName: string;
+        fromName: string;
+        date: string;
+        reference: string;
+        notes: string;
+        lines: { product: string; qty: number }[];
+        total: number;
+      }
+    >();
+    data.movements
+      .filter(isPendingMovement)
+      .sort((a, b) => b.movement_date.localeCompare(a.movement_date) || (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+      .forEach((movement) => {
+        const holderId = movement.to_holder_id ?? "";
+        const key = `${holderId}|${movement.movement_date}|${movement.reference ?? ""}`;
+        const batch = batches.get(key) ?? {
+          key,
+          ids: [],
+          holderId,
+          holderName: data.holders.find((holder) => holder.id === holderId)?.name ?? "Unknown",
+          fromName: data.holders.find((holder) => holder.id === movement.from_holder_id)?.name ?? "",
+          date: movement.movement_date,
+          reference: movement.reference ?? "",
+          notes: movement.notes ?? "",
+          lines: [] as { product: string; qty: number }[],
+          total: 0,
+        };
+        batch.ids.push(movement.id);
+        batch.lines.push({
+          product: data.products.find((product) => product.id === movement.product_id)?.name ?? "Unknown product",
+          qty: movement.quantity,
+        });
+        batch.total += movement.quantity;
+        batches.set(key, batch);
+      });
+    return Array.from(batches.values());
+  }, [data.holders, data.movements, data.products]);
+
+  const pendingTotal = pendingPickups.reduce((total, batch) => total + batch.total, 0);
 
   const lossSummary = useMemo(() => {
     const byHolder = new Map<string, { lost: number; charged: number; unchargedUnits: number }>();
@@ -919,6 +991,7 @@ export default function App() {
     const prepared = movements.map((movement) => ({
       ...movement,
       product_condition: movement.product_condition ?? "good",
+      movement_status: movement.movement_status ?? "confirmed",
     }));
 
     if (usingRemote && supabase) {
@@ -1190,8 +1263,77 @@ export default function App() {
     }));
   }
 
-  async function toggleLossCharged(movement: Movement) {
+  // Confirm a pending pickup: the stock has been collected, so it now lands on
+  // the electrician's count.
+  async function confirmPendingPickup(ids: string[]) {
+    if (!ids.length) return;
+    setSubmitting(true);
     setError(null);
+    setMessage(null);
+    try {
+      if (usingRemote && supabase) {
+        const { error: updateError } = await supabase
+          .from("stock_movements")
+          .update({ movement_status: "confirmed" })
+          .in("id", ids);
+        if (updateError) throw updateError;
+        setData((current) =>
+          normalizeData({
+            ...current,
+            movements: current.movements.map((movement) =>
+              ids.includes(movement.id) ? { ...movement, movement_status: "confirmed" as const } : movement,
+            ),
+          }),
+        );
+      } else {
+        updateLocal((current) => ({
+          ...current,
+          movements: current.movements.map((movement) =>
+            ids.includes(movement.id) ? { ...movement, movement_status: "confirmed" as const } : movement,
+          ),
+        }));
+      }
+      setMessage("Pickup confirmed. Stock added to the electrician.");
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "Could not confirm the pickup.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Cancel a pending pickup: it never happened, so the stock goes back to the
+  // warehouse by removing the movements entirely.
+  async function cancelPendingPickup(ids: string[]) {
+    if (!ids.length) return;
+    if (!window.confirm("Cancel this pending pickup? The stock returns to the warehouse.")) return;
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (usingRemote && supabase) {
+        const { error: deleteError } = await supabase.from("stock_movements").delete().in("id", ids);
+        if (deleteError) throw deleteError;
+        setData((current) =>
+          normalizeData({
+            ...current,
+            movements: current.movements.filter((movement) => !ids.includes(movement.id)),
+          }),
+        );
+      } else {
+        updateLocal((current) => ({
+          ...current,
+          movements: current.movements.filter((movement) => !ids.includes(movement.id)),
+        }));
+      }
+      setMessage("Pending pickup cancelled. Stock returned to the warehouse.");
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Could not cancel the pending pickup.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function toggleLossCharged(movement: Movement) {    setError(null);
     setMessage(null);
     try {
       await updateMovement(movement.id, { charged: !movement.charged });
@@ -1551,6 +1693,50 @@ export default function App() {
     );
   }
 
+  // After a pickup slip goes out, record the released stock as pending: it
+  // leaves the warehouse immediately and waits for the pickup to be confirmed.
+  async function createPendingPickup() {
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    if (!electrician) return;
+    const freight =
+      warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+    if (!freight) return;
+
+    const createdAt = new Date().toISOString();
+    const pending = activeProducts
+      .map((product) => ({ product, quantity: Number(pickupQty[product.id]) }))
+      .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0)
+      .map((line) => ({
+        id: crypto.randomUUID(),
+        movement_date: pickupReleaseDate,
+        movement_type: "issue" as MovementType,
+        product_condition: "good" as ProductCondition,
+        movement_status: "pending" as const,
+        product_id: line.product.id,
+        quantity: line.quantity,
+        from_holder_id: freight.id,
+        to_holder_id: electrician.id,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
+        reference: `${pickupMode} slip`,
+        tracking: null,
+        notes: pickupNotes.trim() || null,
+        created_at: createdAt,
+      }));
+
+    if (!pending.length) return;
+    try {
+      await saveMovements(pending);
+    } catch (pendingError) {
+      setError(
+        pendingError instanceof Error
+          ? `Email sent, but the pending pickup could not be recorded: ${pendingError.message}`
+          : "Email sent, but the pending pickup could not be recorded.",
+      );
+    }
+  }
+
   // Send whatever is in the compose modal (pickup slip or stock report).
   async function confirmSendEmail() {
     const parseEmails = (value: string) =>
@@ -1610,6 +1796,9 @@ export default function App() {
       setMessage(`${label} emailed to ${to.join(", ")}.`);
       setComposeOpen(false);
       if (composeKind === "pickup") {
+        // The warehouse has released this stock, so it leaves their count now
+        // and sits as a pending pickup until the electrician collects it.
+        await createPendingPickup();
         setPickupQty({});
         setPickupNotes("");
       }
@@ -2322,6 +2511,10 @@ export default function App() {
               seedWorkbookSnapshot={seedWorkbookSnapshot}
               canSeed={!hasAnyData}
               submitting={submitting}
+              pendingPickups={pendingPickups}
+              pendingTotal={pendingTotal}
+              onConfirmPickup={confirmPendingPickup}
+              onCancelPickup={cancelPendingPickup}
             />
           ) : null}
 
@@ -2717,6 +2910,7 @@ type ProductTotalRow = {
   product: Product;
   warehouseTotal: number;
   fieldTotal: number;
+  transitTotal: number;
   faultyTotal: number;
   total: number;
 };
@@ -2734,6 +2928,10 @@ function DashboardView({
   seedWorkbookSnapshot,
   canSeed,
   submitting,
+  pendingPickups,
+  pendingTotal,
+  onConfirmPickup,
+  onCancelPickup,
 }: {
   activeHolders: Holder[];
   activeProducts: Product[];
@@ -2747,6 +2945,21 @@ function DashboardView({
   seedWorkbookSnapshot: () => void;
   canSeed: boolean;
   submitting: boolean;
+  pendingPickups: {
+    key: string;
+    ids: string[];
+    holderId: string;
+    holderName: string;
+    fromName: string;
+    date: string;
+    reference: string;
+    notes: string;
+    lines: { product: string; qty: number }[];
+    total: number;
+  }[];
+  pendingTotal: number;
+  onConfirmPickup: (ids: string[]) => void;
+  onCancelPickup: (ids: string[]) => void;
 }) {
   const totalLost = lossSummary.reduce((total, row) => total + row.lost, 0);
   const totalCharged = lossSummary.reduce((total, row) => total + row.charged, 0);
@@ -2775,6 +2988,62 @@ function DashboardView({
         ))}
       </div>
 
+      {pendingPickups.length ? (
+        <section className="panel pending-panel">
+          <div className="panel-header">
+            <span className="head-ic">
+              <Truck size={20} />
+            </span>
+            <div>
+              <h2>Pending Pickup</h2>
+              <p>
+                {pendingTotal.toLocaleString()} unit{pendingTotal === 1 ? "" : "s"} released from the warehouse,
+                waiting to be collected. Confirm once the electrician has it.
+              </p>
+            </div>
+          </div>
+          <div className="pending-list">
+            {pendingPickups.map((batch) => (
+              <div className="pending-row" key={batch.key}>
+                <div className="pending-main">
+                  <div className="pending-top">
+                    <strong>{batch.holderName}</strong>
+                    <span className="status-chip pending-chip">Pending pickup</span>
+                  </div>
+                  <span className="pending-sub">
+                    {batch.lines.map((line) => `${line.qty} × ${line.product}`).join(" · ")}
+                  </span>
+                  <span className="pending-meta">
+                    {batch.fromName ? `${batch.fromName} → ${batch.holderName}` : batch.holderName} ·{" "}
+                    {formatDate(batch.date)}
+                    {batch.reference ? ` · ${batch.reference}` : ""}
+                  </span>
+                </div>
+                <div className="pending-actions">
+                  <button
+                    className="primary-button sm"
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => onConfirmPickup(batch.ids)}
+                  >
+                    <CheckCircle2 size={16} />
+                    Mark as picked up
+                  </button>
+                  <button
+                    className="danger-button ghost sm"
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => onCancelPickup(batch.ids)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panel-header">
           <div>
@@ -2801,12 +3070,14 @@ function DashboardView({
               <col className="data-column" />
               <col className="data-column" />
               <col className="data-column" />
+              {pendingTotal ? <col className="data-column" /> : null}
             </colgroup>
             <thead>
               <tr>
                 <th>Product</th>
                 <th>Warehouses</th>
                 <th>Field</th>
+                {pendingTotal ? <th>In transit</th> : null}
                 <th>Faulty</th>
                 <th>Total (good)</th>
                 <th>Status</th>
@@ -2821,6 +3092,11 @@ function DashboardView({
                   </td>
                   <td className="numeric-cell">{row.warehouseTotal.toLocaleString()}</td>
                   <td className="numeric-cell">{row.fieldTotal.toLocaleString()}</td>
+                  {pendingTotal ? (
+                    <td className={`numeric-cell transit-cell${row.transitTotal > 0 ? " has-transit" : ""}`}>
+                      {row.transitTotal.toLocaleString()}
+                    </td>
+                  ) : null}
                   <td className={`numeric-cell faulty-cell${row.faultyTotal > 0 ? " has-faulty" : ""}`}>
                     {row.faultyTotal.toLocaleString()}
                   </td>
@@ -4336,6 +4612,7 @@ function LedgerView({
                     <span className="ledger-main">
                       <strong>
                         {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
+                        {isPendingMovement(movement) ? <em className="pending-tag">Pending pickup</em> : null}
                       </strong>
                       <span className="ledger-route">
                         {routeText(movement)}
@@ -4550,6 +4827,12 @@ function ElectriciansView({
   const totalFaulty = electrician
     ? activeProducts.reduce((total, product) => total + getBalance(faultyBalanceMap, electrician.id, product.id), 0)
     : 0;
+  // Stock released to this electrician that has not been collected yet.
+  const totalPending = electrician
+    ? data.movements
+        .filter((movement) => movement.to_holder_id === electrician.id && isPendingMovement(movement))
+        .reduce((total, movement) => total + movement.quantity, 0)
+    : 0;
   const lastActivityFor = (holderId: string) =>
     data.movements
       .filter((movement) => movement.from_holder_id === holderId || movement.to_holder_id === holderId)
@@ -4735,6 +5018,12 @@ function ElectriciansView({
                     <span>Faulty held</span>
                     <strong className="soft">{totalFaulty.toLocaleString()}</strong>
                   </div>
+                  {totalPending > 0 ? (
+                    <div className="el-stat">
+                      <span>In transit</span>
+                      <strong className="pending-figure">{totalPending.toLocaleString()}</strong>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="el-tabbar" role="tablist">

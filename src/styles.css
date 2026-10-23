@@ -4225,3 +4225,95 @@ html,
   background: var(--soft);
   color: var(--muted);
 }
+
+/* ---------- Pending pickup (stock released, not yet collected) ---------- */
+.pending-panel {
+  border-left: 3px solid var(--warning);
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.pending-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pending-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pending-top strong {
+  font-size: 0.98rem;
+  color: var(--ink);
+}
+
+.status-chip.pending-chip,
+.pending-tag {
+  color: #ffffff;
+  background: var(--warning);
+  border-color: transparent;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.pending-tag {
+  margin-left: 8px;
+  display: inline-block;
+}
+
+.pending-sub {
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.pending-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.primary-button.sm,
+.danger-button.sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+.el-stat strong.pending-figure {
+  color: var(--warning);
+}
+
+/* In-transit column: pending pickups that have left the warehouse but have not
+   landed on an electrician's count yet. */
+.dashboard-data-table td.transit-cell.has-transit {
+  color: var(--warning);
+  font-weight: 720;
+}

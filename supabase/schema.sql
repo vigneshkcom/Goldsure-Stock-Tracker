@@ -56,6 +56,7 @@ create table if not exists public.stock_movements (
     movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment')
   ),
   product_condition text not null default 'good' check (product_condition in ('good', 'faulty')),
+  movement_status text not null default 'confirmed' check (movement_status in ('pending', 'confirmed')),
   product_id uuid not null references public.products(id) on delete restrict,
   quantity integer not null check (quantity > 0),
   from_holder_id uuid references public.holders(id) on delete restrict,
@@ -93,6 +94,9 @@ alter table public.stock_movements
 add column if not exists product_condition text not null default 'good';
 
 alter table public.stock_movements
+add column if not exists movement_status text not null default 'confirmed';
+
+alter table public.stock_movements
 add column if not exists warranty_job_id uuid references public.warranty_jobs(id) on delete set null;
 
 alter table public.stock_movements
@@ -112,6 +116,13 @@ drop constraint if exists stock_movements_movement_type_check;
 alter table public.stock_movements
 add constraint stock_movements_movement_type_check
 check (movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment'));
+
+alter table public.stock_movements
+drop constraint if exists stock_movements_movement_status_check;
+
+alter table public.stock_movements
+add constraint stock_movements_movement_status_check
+check (movement_status in ('pending', 'confirmed'));
 
 alter table public.stock_movements
 drop constraint if exists stock_movements_product_condition_check;
