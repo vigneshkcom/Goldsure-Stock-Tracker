@@ -481,6 +481,11 @@ export default function App() {
   const [pickupNotes, setPickupNotes] = useState("");
   const [pickupMode, setPickupMode] = useState<"Pickup" | "Delivery">("Pickup");
   const [sendingSlip, setSendingSlip] = useState(false);
+  // Electrician-to-electrician transfer.
+  const [transferToId, setTransferToId] = useState("");
+  const [transferDate, setTransferDate] = useState(today());
+  const [transferReference, setTransferReference] = useState("");
+  const [transferQty, setTransferQty] = useState<Record<string, string>>({});
   // The pending pickup waiting to be approved, and the tracking link it needs.
   const [confirmBatch, setConfirmBatch] = useState<PendingPickupBatch | null>(null);
   const [confirmTracking, setConfirmTracking] = useState("");
@@ -551,6 +556,19 @@ export default function App() {
       byProduct.set(movement.product_id, (byProduct.get(movement.product_id) ?? 0) + movement.quantity);
     });
     return byProduct;
+  }, [data.movements]);
+
+  // The same, per holder and product, keyed like the balance maps. Counted
+  // against whoever the stock is heading to, since the source is already
+  // debited.
+  const pendingBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    data.movements.filter(isPendingMovement).forEach((movement) => {
+      if (!movement.to_holder_id) return;
+      const key = `${movement.to_holder_id}:${movement.product_id}`;
+      map.set(key, (map.get(key) ?? 0) + movement.quantity);
+    });
+    return map;
   }, [data.movements]);
 
   const productTotals = useMemo(
@@ -1220,6 +1238,65 @@ export default function App() {
     if (ok) {
       setInstallQty({});
       setInstallReference("");
+    }
+  }
+
+  // Stock moving straight from one electrician to another, without going back
+  // through the warehouse. Recorded as a single movement per product so both
+  // counts move together and the ledger shows who handed it over.
+  async function handleTransferStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const from = technicians.find((holder) => holder.id === selectedElectricianId);
+    const to = technicians.find((holder) => holder.id === transferToId);
+    if (!from) {
+      setError("Choose an electrician.");
+      return;
+    }
+    if (!to || to.id === from.id) {
+      setError("Choose a different electrician to transfer to.");
+      return;
+    }
+
+    const lines = collectLines(transferQty);
+    if (!lines.length) {
+      setError("Enter a quantity for at least one product.");
+      return;
+    }
+    for (const line of lines) {
+      const available = getBalance(goodBalanceMap, from.id, line.productId);
+      if (available < line.quantity) {
+        const name = activeProducts.find((product) => product.id === line.productId)?.name ?? "product";
+        setError(`${from.name} only has ${available.toLocaleString()} of ${name} to transfer.`);
+        return;
+      }
+    }
+
+    const createdAt = new Date().toISOString();
+    const ok = await saveBatch(
+      lines,
+      (line) => ({
+        id: crypto.randomUUID(),
+        movement_date: transferDate,
+        movement_type: "issue" as MovementType,
+        product_condition: "good" as ProductCondition,
+        movement_status: "confirmed" as const,
+        product_id: line.productId,
+        quantity: line.quantity,
+        from_holder_id: from.id,
+        to_holder_id: to.id,
+        warranty_job_id: null,
+        job_number: null,
+        customer_name: null,
+        reference: transferReference.trim() || `Transfer to ${to.name}`,
+        tracking: null,
+        notes: `Transferred from ${from.name} to ${to.name}.`,
+        created_at: createdAt,
+      }),
+      `Transferred stock from ${from.name} to ${to.name}.`,
+    );
+    if (ok) {
+      setTransferQty({});
+      setTransferReference("");
     }
   }
 
@@ -2691,6 +2768,7 @@ export default function App() {
               activeHolders={visibleDashboardHolders}
               activeProducts={activeProducts}
               balanceMap={goodBalanceMap}
+              pendingBalanceMap={pendingBalanceMap}
               latestMovement={latestMovement}
               negativeBalances={negativeBalances}
               productTotals={productTotals}
@@ -2840,6 +2918,15 @@ export default function App() {
               onRecordInstall={handleRecordInstall}
               onRecordLoss={handleRecordLoss}
               onSwapProduct={handleSwapProduct}
+              transferToId={transferToId}
+              transferDate={transferDate}
+              transferReference={transferReference}
+              transferQty={transferQty}
+              setTransferToId={setTransferToId}
+              setTransferDate={setTransferDate}
+              setTransferReference={setTransferReference}
+              setTransferQty={setTransferQty}
+              onTransferStock={handleTransferStock}
               onToggleLossCharged={toggleLossCharged}
               onDeleteMovement={deleteMovement}
               onDownloadPickupSlip={handleDownloadPickupSlip}
@@ -3225,6 +3312,7 @@ function DashboardView({
   activeHolders,
   activeProducts,
   balanceMap,
+  pendingBalanceMap,
   latestMovement,
   negativeBalances,
   productTotals,
@@ -3242,6 +3330,7 @@ function DashboardView({
   activeHolders: Holder[];
   activeProducts: Product[];
   balanceMap: Map<string, number>;
+  pendingBalanceMap: Map<string, number>;
   latestMovement: Movement | undefined;
   negativeBalances: BalanceRow[];
   productTotals: ProductTotalRow[];
@@ -3430,6 +3519,7 @@ function DashboardView({
               {activeProducts.map((product) => (
                 <col className="data-column" key={product.id} />
               ))}
+              {pendingTotal ? <col className="data-column" /> : null}
               <col className="data-column" />
             </colgroup>
             <thead>
@@ -3438,6 +3528,7 @@ function DashboardView({
                 {activeProducts.map((product) => (
                   <th key={product.id}>{product.sku ?? product.name}</th>
                 ))}
+                {pendingTotal ? <th>In transit</th> : null}
                 <th>Total</th>
               </tr>
             </thead>
@@ -3445,6 +3536,10 @@ function DashboardView({
               {activeHolders.map((holder) => {
                 const rowTotal = activeProducts.reduce(
                   (total, product) => total + getBalance(balanceMap, holder.id, product.id),
+                  0,
+                );
+                const rowTransit = activeProducts.reduce(
+                  (total, product) => total + getBalance(pendingBalanceMap, holder.id, product.id),
                   0,
                 );
 
@@ -3456,12 +3551,19 @@ function DashboardView({
                     </td>
                     {activeProducts.map((product) => {
                       const value = getBalance(balanceMap, holder.id, product.id);
+                      const transit = getBalance(pendingBalanceMap, holder.id, product.id);
                       return (
                         <td className={value < 0 ? "numeric-cell negative-cell" : "numeric-cell"} key={product.id}>
                           {value.toLocaleString()}
+                          {transit > 0 ? <em className="cell-transit">+{transit.toLocaleString()}</em> : null}
                         </td>
                       );
                     })}
+                    {pendingTotal ? (
+                      <td className={`numeric-cell${rowTransit > 0 ? " transit-figure" : ""}`}>
+                        {rowTransit.toLocaleString()}
+                      </td>
+                    ) : null}
                     <td className="numeric-cell total-cell">{rowTotal.toLocaleString()}</td>
                   </tr>
                 );
@@ -5010,6 +5112,15 @@ function ElectriciansView({
   onRecordInstall,
   onRecordLoss,
   onSwapProduct,
+  transferToId,
+  transferDate,
+  transferReference,
+  transferQty,
+  setTransferToId,
+  setTransferDate,
+  setTransferReference,
+  setTransferQty,
+  onTransferStock,
   onToggleLossCharged,
   onDeleteMovement,
   onDownloadPickupSlip,
@@ -5067,6 +5178,15 @@ function ElectriciansView({
   onRecordInstall: (event: FormEvent<HTMLFormElement>) => void;
   onRecordLoss: (event: FormEvent<HTMLFormElement>) => void;
   onSwapProduct: (holderId: string, fromProductId: string, toProductId: string, quantity: number) => void;
+  transferToId: string;
+  transferDate: string;
+  transferReference: string;
+  transferQty: Record<string, string>;
+  setTransferToId: (value: string) => void;
+  setTransferDate: (value: string) => void;
+  setTransferReference: (value: string) => void;
+  setTransferQty: (value: Record<string, string>) => void;
+  onTransferStock: (event: FormEvent<HTMLFormElement>) => void;
   onToggleLossCharged: (movement: Movement) => void;
   onDeleteMovement: (movementId: string) => void;
   onDownloadPickupSlip: () => void;
@@ -5079,9 +5199,9 @@ function ElectriciansView({
   onViewHistory: (electricianId: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const [tab, setTab] = useState<"overview" | "give" | "install" | "installed" | "request" | "loss" | "history">(
-    "overview",
-  );
+  const [tab, setTab] = useState<
+    "overview" | "give" | "install" | "installed" | "request" | "transfer" | "loss" | "history"
+  >("overview");
   const [installWeek, setInstallWeek] = useState<string>("all");
   // The product swap form: which product gives up units, which receives them.
   const [swapOpen, setSwapOpen] = useState(false);
@@ -5373,6 +5493,7 @@ function ElectriciansView({
                     ["install", "Install"],
                     ["installed", "Installed"],
                     ["request", "Request stock"],
+                    ["transfer", "Transfer"],
                     ["loss", "Loss"],
                     ["history", "History"],
                   ] as const).map(([key, label]) => (
@@ -5619,6 +5740,85 @@ function ElectriciansView({
                           <button className="primary-button" type="submit" disabled={submitting || !warehouses.length}>
                             <Truck size={18} />
                             Give stock
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  ) : null}
+
+                  {tab === "transfer" ? (
+                    <>
+                      <p className="el-intro">
+                        Hand stock straight from {electrician.name} to another electrician, without sending it back to
+                        the warehouse first.
+                      </p>
+                      <form className="stack-form" onSubmit={onTransferStock}>
+                        <div className="form-row">
+                          <label>
+                            Date
+                            <input
+                              type="date"
+                              value={transferDate}
+                              onChange={(event) => setTransferDate(event.target.value)}
+                              required
+                            />
+                          </label>
+                          <label>
+                            Transfer to
+                            <select
+                              value={transferToId}
+                              onChange={(event) => setTransferToId(event.target.value)}
+                              required
+                            >
+                              <option value="">Choose an electrician</option>
+                              {technicians
+                                .filter((holder) => holder.id !== electrician.id)
+                                .map((holder) => (
+                                  <option value={holder.id} key={holder.id}>
+                                    {holder.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="qty-list">
+                          {activeProducts.map((product) => (
+                            <div className="qty-row" key={product.id}>
+                              <div className="qty-name">
+                                <strong>{product.name}</strong>
+                                <span>
+                                  {getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()} on hand
+                                </span>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="0"
+                                value={transferQty[product.id] ?? ""}
+                                onChange={(event) =>
+                                  setTransferQty({ ...transferQty, [product.id]: event.target.value })
+                                }
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <label>
+                          Reference
+                          <input
+                            value={transferReference}
+                            onChange={(event) => setTransferReference(event.target.value)}
+                            placeholder="e.g. Handed over on site"
+                          />
+                        </label>
+                        <div className="el-formfoot">
+                          <button
+                            className="primary-button"
+                            type="submit"
+                            disabled={submitting || technicians.length < 2}
+                          >
+                            <ArrowRight size={18} />
+                            Transfer stock
                           </button>
                         </div>
                       </form>

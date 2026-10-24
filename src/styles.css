@@ -4640,3 +4640,13 @@ td.transit-figure {
   color: var(--muted);
   margin-bottom: 9px;
 }
+
+/* In-transit figure tucked under an on-hand number in the holder matrix. */
+.cell-transit {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--warning);
+}
