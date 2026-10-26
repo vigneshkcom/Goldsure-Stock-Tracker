@@ -148,6 +148,18 @@ function isPendingMovement(movement: Movement): boolean {
   return movement.movement_status === "pending";
 }
 
+// Stock moved straight between two electricians, rather than issued by a
+// warehouse. Stored as an issue with a technician at both ends.
+function isTransferBetween(movement: Movement, technicianIds: Set<string>): boolean {
+  return (
+    movement.movement_type === "issue" &&
+    !!movement.from_holder_id &&
+    !!movement.to_holder_id &&
+    technicianIds.has(movement.from_holder_id) &&
+    technicianIds.has(movement.to_holder_id)
+  );
+}
+
 // Released stock either gets collected by the electrician (Pickup) or sent out
 // by the warehouse (Delivery). The slip reference records which, and every
 // label downstream follows it so the two are never confused.
@@ -1654,6 +1666,9 @@ export default function App() {
 
     // All good stock ever received by this electrician, oldest first, with exact
     // dates — so a report run in a later month still shows earlier issuances.
+    const technicianIds = new Set(technicians.map((holder) => holder.id));
+    const isTechnicianTransfer = (movement: Movement) => isTransferBetween(movement, technicianIds);
+
     // Only stock actually in their hands. Anything still pending is listed in
     // its own In Transit section instead, so it is never counted as received.
     const received = data.movements
@@ -1663,9 +1678,23 @@ export default function App() {
       .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
       .map((m) => ({
         date: formatDate(m.movement_date),
-        type: movementLabels[m.movement_type],
+        // Stock from another electrician reads as a transfer, not a warehouse
+        // issue, so the row says where it really came from.
+        type: isTechnicianTransfer(m) ? "Transfer in" : movementLabels[m.movement_type],
         product: productName(m.product_id),
         from: holderName(m.from_holder_id),
+        qty: m.quantity,
+      }));
+
+    // Stock handed straight to another electrician. Without this the report
+    // showed their count dropping with nothing to account for it.
+    const transferredOut = data.movements
+      .filter((m) => m.from_holder_id === electrician.id && isTechnicianTransfer(m))
+      .sort((a, b) => a.movement_date.localeCompare(b.movement_date))
+      .map((m) => ({
+        date: formatDate(m.movement_date),
+        product: productName(m.product_id),
+        to: holderName(m.to_holder_id),
         qty: m.quantity,
       }));
 
@@ -1692,6 +1721,14 @@ export default function App() {
         byProduct.set(m.product_id, (byProduct.get(m.product_id) ?? 0) + m.quantity);
         weekGroups.set(week, byProduct);
       });
+    // Column order for the installs matrix: every product with an install in
+    // the period, in the usual product order.
+    const installedProductIds = new Set<string>();
+    weekGroups.forEach((byProduct) => byProduct.forEach((_qty, pid) => installedProductIds.add(pid)));
+    const installProducts = activeProducts
+      .filter((product) => installedProductIds.has(product.id))
+      .map((product) => product.name);
+
     const installsByWeek = Array.from(weekGroups.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([week, byProduct]) => ({
@@ -1746,6 +1783,8 @@ export default function App() {
       received,
       inTransit,
       returned,
+      transferredOut,
+      installProducts,
       installsByWeek,
       lost,
     };

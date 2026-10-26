@@ -199,6 +199,10 @@ export type StockReportInput = {
   // Released by the warehouse but not confirmed as collected yet.
   inTransit: { date: string; mode: string; product: string; from: string; qty: number; tracking: string }[];
   returned: { date: string; product: string; condition: string; to: string; qty: number }[];
+  // Stock handed straight to another electrician.
+  transferredOut: { date: string; product: string; to: string; qty: number }[];
+  // Column order for the installs matrix, then a row per week ending.
+  installProducts: string[];
   installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
   lost: { date: string; product: string; qty: number; charged: string }[];
   logoUrl?: string;
@@ -388,16 +392,31 @@ export function buildStockReportInner(input: StockReportInput): string {
         .join("")
     : `<tr><td colspan="5" style="${cell}">Nothing received this month.</td></tr>`;
 
+  // One row per week, one column per product, matching the PDF.
+  const installHead = `<tr><th style="${head}">Week ending</th>${input.installProducts
+    .map((product) => `<th style="${head}">${escapeHtml(product)}</th>`)
+    .join("")}</tr>`;
   const installRows = input.installsByWeek.length
     ? input.installsByWeek
-        .flatMap((week) =>
-          week.items.map(
-            (item, index) =>
-              `<tr><td style="${cell}">${index === 0 ? escapeHtml(week.week) : ""}</td><td style="${cell}">${escapeHtml(item.product)}</td><td style="${cell};text-align:center;">${item.qty.toLocaleString()}</td></tr>`,
-          ),
-        )
+        .map((week) => {
+          const byProduct = new Map(week.items.map((item) => [item.product, item.qty]));
+          const cells = input.installProducts
+            .map(
+              (product) =>
+                `<td style="${cell};text-align:center;">${(byProduct.get(product) ?? 0).toLocaleString()}</td>`,
+            )
+            .join("");
+          return `<tr><td style="${cell}">${escapeHtml(week.week)}</td>${cells}</tr>`;
+        })
         .join("")
-    : `<tr><td colspan="3" style="${cell}">Nothing installed this month.</td></tr>`;
+    : `<tr><td colspan="${input.installProducts.length + 1}" style="${cell}">Nothing installed this month.</td></tr>`;
+
+  const transferredRows = input.transferredOut
+    .map(
+      (row) =>
+        `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell}">${escapeHtml(row.to)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
+    )
+    .join("");
 
   const lostRows = input.lost.length
     ? input.lost
@@ -425,9 +444,19 @@ export function buildStockReportInner(input: StockReportInput): string {
       ${receivedRows}
     </table>
 
+    ${
+      input.transferredOut.length
+        ? `<h2 style="font-size:1.05rem;margin:18px 0 6px;">Transferred To Another Electrician</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr><th style="${head}">Date</th><th style="${head}">Product</th><th style="${head}">To</th><th style="${head}">Qty</th></tr>
+      ${transferredRows}
+    </table>`
+        : ""
+    }
+
     <h2 style="font-size:1.05rem;margin:18px 0 6px;">Installed This Month</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <tr><th style="${head}">Week ending</th><th style="${head}">Product</th><th style="${head}">Installed</th></tr>
+      ${installHead}
       ${installRows}
     </table>
 

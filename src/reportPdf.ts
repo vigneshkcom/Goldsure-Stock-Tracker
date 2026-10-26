@@ -102,11 +102,22 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     y + 26,
   );
 
-  const installRows: string[][] = [];
-  input.installsByWeek.forEach((week) =>
-    week.items.forEach((item, index) => installRows.push([index === 0 ? week.week : "", item.product, String(item.qty)])),
-  );
-  y = section(doc, "Installed This Month", ["Week ending", "Product", "Installed"], installRows, y + 26);
+  if (input.transferredOut.length) {
+    y = section(
+      doc,
+      "Stock Transferred To Another Electrician (all dates)",
+      ["Date", "Product", "To", "Qty"],
+      input.transferredOut.map((row) => [row.date, row.product, row.to || "-", String(row.qty)]),
+      y + 26,
+    );
+  }
+
+  // One row per week, one column per product, so a week reads across.
+  const installRows = input.installsByWeek.map((week) => {
+    const byProduct = new Map(week.items.map((item) => [item.product, item.qty]));
+    return [week.week, ...input.installProducts.map((product) => String(byProduct.get(product) ?? 0))];
+  });
+  y = section(doc, "Installed This Month", ["Week ending", ...input.installProducts], installRows, y + 26);
 
   if (input.lost.length) {
     section(
