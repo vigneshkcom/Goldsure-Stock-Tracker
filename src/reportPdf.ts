@@ -77,11 +77,31 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     y,
   );
 
+  // A row per date and source, a column per product, with the column totals
+  // underneath.
+  const receivedRows = input.receivedByDate.map((row) => {
+    const byProduct = new Map(row.items.map((item) => [item.product, item.qty]));
+    return [row.date, row.from || "-", ...input.receivedProducts.map((p) => String(byProduct.get(p) ?? 0))];
+  });
+  if (receivedRows.length) {
+    receivedRows.push([
+      "Total",
+      "",
+      ...input.receivedProducts.map((product) =>
+        String(
+          input.receivedByDate.reduce(
+            (sum, row) => sum + (row.items.find((item) => item.product === product)?.qty ?? 0),
+            0,
+          ),
+        ),
+      ),
+    ]);
+  }
   y = section(
     doc,
     "Stock Received (all dates)",
-    ["Date", "Type", "Product", "From", "Qty"],
-    input.received.map((row) => [row.date, row.type, row.product, row.from || "-", String(row.qty)]),
+    ["Date", "From", ...input.receivedProducts],
+    receivedRows,
     y + 26,
   );
 
@@ -118,7 +138,39 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     const byProduct = new Map(week.items.map((item) => [item.product, item.qty]));
     return [week.week, ...input.installProducts.map((product) => String(byProduct.get(product) ?? 0))];
   });
+  if (installRows.length) {
+    installRows.push([
+      "Total",
+      ...input.installProducts.map((product) =>
+        String(
+          input.installsByWeek.reduce(
+            (sum, week) => sum + (week.items.find((item) => item.product === product)?.qty ?? 0),
+            0,
+          ),
+        ),
+      ),
+    ]);
+  }
   y = section(doc, "Installed This Month", ["Week ending", ...input.installProducts], installRows, y + 26);
+
+  // The whole history per product, so taken vs fitted can be reconciled at a
+  // glance. Received less everything that left equals what is on hand.
+  y = section(
+    doc,
+    "Overall Totals (all dates)",
+    ["Product", "Received", "Installed", "Returned", "Transferred", "Lost", "Adjustments", "On hand"],
+    input.summary.map((row) => [
+      row.product,
+      row.received.toLocaleString(),
+      row.installed.toLocaleString(),
+      row.returned.toLocaleString(),
+      row.transferred.toLocaleString(),
+      row.lost.toLocaleString(),
+      row.adjustments.toLocaleString(),
+      row.onHand.toLocaleString(),
+    ]),
+    y + 26,
+  );
 
   if (input.lost.length) {
     section(

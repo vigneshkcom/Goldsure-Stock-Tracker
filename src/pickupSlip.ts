@@ -195,12 +195,27 @@ export type StockReportInput = {
   electricianName: string;
   asOfDate: string;
   remaining: { product: string; good: number; faulty: number }[];
-  received: { date: string; type: string; product: string; from: string; qty: number }[];
+  // Received laid out as a matrix: a row per date and source, a column per
+  // product, so it reads the same way as the installs table.
+  receivedProducts: string[];
+  receivedByDate: { date: string; from: string; items: { product: string; qty: number }[] }[];
   // Released by the warehouse but not confirmed as collected yet.
   inTransit: { date: string; mode: string; product: string; from: string; qty: number; tracking: string }[];
   returned: { date: string; product: string; condition: string; to: string; qty: number }[];
   // Stock handed straight to another electrician.
   transferredOut: { date: string; product: string; to: string; qty: number }[];
+  // Everything that happened over the whole history, per product, so the
+  // electrician can reconcile what they took against what they fitted.
+  summary: {
+    product: string;
+    received: number;
+    installed: number;
+    returned: number;
+    transferred: number;
+    lost: number;
+    adjustments: number;
+    onHand: number;
+  }[];
   // Column order for the installs matrix, then a row per week ending.
   installProducts: string[];
   installsByWeek: { week: string; items: { product: string; qty: number }[] }[];
@@ -382,107 +397,6 @@ export function buildWarehouseReportEmailBodyInner(input: WarehouseReportEmailBo
         : ""
     }
     <p style="font-size:13px;color:#555;margin:16px 0 0;">Stock reconciled by Goldsure as of ${escapeHtml(input.asOfDate)}. A full movement history since ${escapeHtml(input.sinceDate)} is attached as a PDF, for your information.</p>`;
-}
-
-// Monthly stock statement emailed to an electrician.
-export function buildStockReportInner(input: StockReportInput): string {
-  const logo = input.logoUrl
-    ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" height="48" style="height:48px;width:auto;margin-bottom:14px;" />`
-    : "";
-
-  const remainingRows = input.remaining
-    .map(
-      (row) =>
-        `<tr><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.good.toLocaleString()}</td><td style="${cell};text-align:center;">${row.faulty.toLocaleString()}</td></tr>`,
-    )
-    .join("");
-
-  const receivedRows = input.received.length
-    ? input.received
-        .map(
-          (row) =>
-            `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.type)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell}">${escapeHtml(row.from) || "&mdash;"}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
-        )
-        .join("")
-    : `<tr><td colspan="5" style="${cell}">Nothing received this month.</td></tr>`;
-
-  // One row per week, one column per product, matching the PDF.
-  const installHead = `<tr><th style="${head}">Week ending</th>${input.installProducts
-    .map((product) => `<th style="${head}">${escapeHtml(product)}</th>`)
-    .join("")}</tr>`;
-  const installRows = input.installsByWeek.length
-    ? input.installsByWeek
-        .map((week) => {
-          const byProduct = new Map(week.items.map((item) => [item.product, item.qty]));
-          const cells = input.installProducts
-            .map(
-              (product) =>
-                `<td style="${cell};text-align:center;">${(byProduct.get(product) ?? 0).toLocaleString()}</td>`,
-            )
-            .join("");
-          return `<tr><td style="${cell}">${escapeHtml(week.week)}</td>${cells}</tr>`;
-        })
-        .join("")
-    : `<tr><td colspan="${input.installProducts.length + 1}" style="${cell}">Nothing installed this month.</td></tr>`;
-
-  const transferredRows = input.transferredOut
-    .map(
-      (row) =>
-        `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell}">${escapeHtml(row.to)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td></tr>`,
-    )
-    .join("");
-
-  const lostRows = input.lost.length
-    ? input.lost
-        .map(
-          (row) =>
-            `<tr><td style="${cell}">${escapeHtml(row.date)}</td><td style="${cell}">${escapeHtml(row.product)}</td><td style="${cell};text-align:center;">${row.qty.toLocaleString()}</td><td style="${cell}">${escapeHtml(row.charged)}</td></tr>`,
-        )
-        .join("")
-    : "";
-
-  return `
-    ${logo}
-    <h1 style="font-size:1.4rem;margin:0 0 4px;">Stock Report &mdash; ${escapeHtml(input.electricianName)}</h1>
-    <p style="margin:0 0 18px;color:#444;">As of ${escapeHtml(input.asOfDate)}</p>
-
-    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Stock On Hand Now</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <tr><th style="${head}">Product</th><th style="${head}">On hand (good)</th><th style="${head}">Faulty held</th></tr>
-      ${remainingRows}
-    </table>
-
-    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Received This Month</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <tr><th style="${head}">Date</th><th style="${head}">Type</th><th style="${head}">Product</th><th style="${head}">From</th><th style="${head}">Qty</th></tr>
-      ${receivedRows}
-    </table>
-
-    ${
-      input.transferredOut.length
-        ? `<h2 style="font-size:1.05rem;margin:18px 0 6px;">Transferred To Another Electrician</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <tr><th style="${head}">Date</th><th style="${head}">Product</th><th style="${head}">To</th><th style="${head}">Qty</th></tr>
-      ${transferredRows}
-    </table>`
-        : ""
-    }
-
-    <h2 style="font-size:1.05rem;margin:18px 0 6px;">Installed This Month</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      ${installHead}
-      ${installRows}
-    </table>
-
-    ${
-      input.lost.length
-        ? `<h2 style="font-size:1.05rem;margin:18px 0 6px;">Stock Lost This Month</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <tr><th style="${head}">Date</th><th style="${head}">Product</th><th style="${head}">Qty</th><th style="${head}">Charged</th></tr>
-      ${lostRows}
-    </table>`
-        : ""
-    }`;
 }
 
 const cell = "border:1px solid #333;padding:6px 8px;vertical-align:middle;";

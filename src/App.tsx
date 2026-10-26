@@ -1750,11 +1750,27 @@ export default function App() {
         date: formatDate(m.movement_date),
         // Stock from another electrician reads as a transfer, not a warehouse
         // issue, so the row says where it really came from.
-        type: isTechnicianTransfer(m) ? "Transfer in" : movementLabels[m.movement_type],
+        from: holderName(m.from_holder_id) || (isTechnicianTransfer(m) ? "Transfer in" : "Opening"),
+        productId: m.product_id,
         product: productName(m.product_id),
-        from: holderName(m.from_holder_id),
         qty: m.quantity,
       }));
+
+    // Pivot into a row per date and source, with a column per product.
+    const receivedProductIds = new Set(received.map((row) => row.productId));
+    const receivedProducts = activeProducts
+      .filter((product) => receivedProductIds.has(product.id))
+      .map((product) => product.name);
+    const receivedGroups = new Map<string, { date: string; from: string; items: { product: string; qty: number }[] }>();
+    received.forEach((row) => {
+      const key = `${row.date}|${row.from}`;
+      const group = receivedGroups.get(key) ?? { date: row.date, from: row.from, items: [] };
+      const existing = group.items.find((item) => item.product === row.product);
+      if (existing) existing.qty += row.qty;
+      else group.items.push({ product: row.product, qty: row.qty });
+      receivedGroups.set(key, group);
+    });
+    const receivedByDate = Array.from(receivedGroups.values());
 
     // Stock handed straight to another electrician. Without this the report
     // showed their count dropping with nothing to account for it.
@@ -1845,15 +1861,58 @@ export default function App() {
         tracking: m.tracking ?? "",
       }));
 
+    // Whole-history totals per product, so what was taken can be reconciled
+    // against what was fitted. Received less everything that left, plus any
+    // adjustments, equals what is on hand.
+    const summary = activeProducts
+      .map((product) => {
+        const mine = data.movements.filter(
+          (m) => m.product_id === product.id && getMovementCondition(m) === "good",
+        );
+        const sum = (predicate: (m: Movement) => boolean) =>
+          mine.filter(predicate).reduce((total, m) => total + m.quantity, 0);
+        const receivedTotal = sum((m) => m.to_holder_id === electrician.id && !isPendingMovement(m));
+        const installed = sum((m) => m.from_holder_id === electrician.id && m.movement_type === "install");
+        const returnedTotal = sum((m) => m.from_holder_id === electrician.id && m.movement_type === "return");
+        const transferred = sum((m) => m.from_holder_id === electrician.id && isTechnicianTransfer(m));
+        const lostTotal = sum((m) => m.from_holder_id === electrician.id && m.is_loss === true);
+        // Whatever else left them (adjustments out, swaps, posts), shown as a
+        // single signed figure so the row still balances.
+        const otherOut = sum(
+          (m) =>
+            m.from_holder_id === electrician.id &&
+            m.movement_type !== "install" &&
+            m.movement_type !== "return" &&
+            !isTechnicianTransfer(m) &&
+            m.is_loss !== true,
+        );
+        return {
+          product: product.name,
+          received: receivedTotal,
+          installed,
+          returned: returnedTotal,
+          transferred,
+          lost: lostTotal,
+          adjustments: otherOut === 0 ? 0 : -otherOut,
+          onHand: getBalance(goodBalanceMap, electrician.id, product.id),
+        };
+      })
+      .filter(
+        (row) =>
+          row.received || row.installed || row.returned || row.transferred || row.lost || row.adjustments || row.onHand,
+      );
+
     const asOfDate = formatDate(today());
     const reportData: StockReportInput = {
       electricianName: electrician.name,
       asOfDate,
       remaining,
-      received,
+      receivedProducts,
+      receivedByDate,
       inTransit,
       returned,
       transferredOut,
+      summary,
       installProducts,
       installsByWeek,
       lost,
