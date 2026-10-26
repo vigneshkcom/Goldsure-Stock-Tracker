@@ -203,7 +203,7 @@ export type StockReportInput = {
   inTransit: { date: string; mode: string; product: string; from: string; qty: number; tracking: string }[];
   returned: { date: string; product: string; condition: string; to: string; qty: number }[];
   // Stock handed straight to another electrician.
-  transferredOut: { date: string; product: string; to: string; qty: number }[];
+  transferredOut: { date: string; product: string; to: string; qty: number; tracking: string }[];
   // Everything that happened over the whole history, per product, so the
   // electrician can reconcile what they took against what they fitted.
   summary: {
@@ -240,6 +240,7 @@ export type MovementDocketInput = {
   fromName: string;
   toName: string;
   reference: string;
+  tracking: string;
   condition: string;
   notes: string;
   lines: { product: string; sku: string | null; quantity: number }[];

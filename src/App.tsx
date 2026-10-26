@@ -516,6 +516,7 @@ export default function App() {
   const [transferToId, setTransferToId] = useState("");
   const [transferDate, setTransferDate] = useState(today());
   const [transferReference, setTransferReference] = useState("");
+  const [transferTracking, setTransferTracking] = useState("");
   const [transferQty, setTransferQty] = useState<Record<string, string>>({});
   // The pending pickup waiting to be approved, and the tracking link it needs.
   const [confirmBatch, setConfirmBatch] = useState<PendingPickupBatch | null>(null);
@@ -1280,6 +1281,7 @@ export default function App() {
     fromId: string | null;
     toId: string | null;
     reference: string;
+    tracking: string;
     condition: ProductCondition;
     notes: string;
     lines: { productId: string; quantity: number }[];
@@ -1314,6 +1316,7 @@ export default function App() {
           fromName,
           toName,
           reference: input.reference.trim(),
+          tracking: input.tracking.trim(),
           condition: conditionLabels[input.condition],
           notes: input.notes.trim(),
           lines,
@@ -1370,7 +1373,7 @@ export default function App() {
         job_number: null,
         customer_name: null,
         reference: transferReference.trim() || `Transfer to ${to.name}`,
-        tracking: null,
+        tracking: transferTracking.trim() || null,
         notes: `Transferred from ${from.name} to ${to.name}.`,
         created_at: createdAt,
       }),
@@ -1379,6 +1382,7 @@ export default function App() {
     if (ok) {
       setTransferQty({});
       setTransferReference("");
+      setTransferTracking("");
     }
   }
 
@@ -1782,6 +1786,7 @@ export default function App() {
         product: productName(m.product_id),
         to: holderName(m.to_holder_id),
         qty: m.quantity,
+        tracking: m.tracking ?? "",
       }));
 
     // Everything this electrician has returned to a warehouse (good or faulty),
@@ -2997,6 +3002,7 @@ export default function App() {
                     fromId: fromHolderId || null,
                     toId: toHolderId || null,
                     reference,
+                    tracking,
                     condition: moveCondition,
                     notes,
                     lines: [{ productId, quantity: Number(quantity) }],
@@ -3101,10 +3107,12 @@ export default function App() {
               transferToId={transferToId}
               transferDate={transferDate}
               transferReference={transferReference}
+              transferTracking={transferTracking}
               transferQty={transferQty}
               setTransferToId={setTransferToId}
               setTransferDate={setTransferDate}
               setTransferReference={setTransferReference}
+              setTransferTracking={setTransferTracking}
               setTransferQty={setTransferQty}
               onTransferStock={handleTransferStock}
               onDownloadTransferDocket={() => {
@@ -3115,6 +3123,7 @@ export default function App() {
                   fromId: selectedElectricianId,
                   toId: transferToId || null,
                   reference: transferReference || (to ? `Transfer to ${to.name}` : "Transfer"),
+                  tracking: transferTracking,
                   condition: "good",
                   notes: "",
                   lines: collectLines(transferQty),
@@ -5316,10 +5325,12 @@ function ElectriciansView({
   transferToId,
   transferDate,
   transferReference,
+  transferTracking,
   transferQty,
   setTransferToId,
   setTransferDate,
   setTransferReference,
+  setTransferTracking,
   setTransferQty,
   onTransferStock,
   onDownloadTransferDocket,
@@ -5383,10 +5394,12 @@ function ElectriciansView({
   transferToId: string;
   transferDate: string;
   transferReference: string;
+  transferTracking: string;
   transferQty: Record<string, string>;
   setTransferToId: (value: string) => void;
   setTransferDate: (value: string) => void;
   setTransferReference: (value: string) => void;
+  setTransferTracking: (value: string) => void;
   setTransferQty: (value: Record<string, string>) => void;
   onTransferStock: (event: FormEvent<HTMLFormElement>) => void;
   onDownloadTransferDocket: () => void;
@@ -6006,14 +6019,24 @@ function ElectriciansView({
                             </div>
                           ))}
                         </div>
-                        <label>
-                          Reference
-                          <input
-                            value={transferReference}
-                            onChange={(event) => setTransferReference(event.target.value)}
-                            placeholder="e.g. Handed over on site"
-                          />
-                        </label>
+                        <div className="form-row">
+                          <label>
+                            Reference
+                            <input
+                              value={transferReference}
+                              onChange={(event) => setTransferReference(event.target.value)}
+                              placeholder="e.g. Handed over on site"
+                            />
+                          </label>
+                          <label>
+                            Tracking
+                            <input
+                              value={transferTracking}
+                              onChange={(event) => setTransferTracking(event.target.value)}
+                              placeholder="Consignment number or link"
+                            />
+                          </label>
+                        </div>
                         <div className="el-formfoot">
                           <button
                             className="secondary-button"

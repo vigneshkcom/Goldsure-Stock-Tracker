@@ -127,8 +127,8 @@ export function buildReportPdfBase64(input: StockReportInput, logo?: string): st
     y = section(
       doc,
       "Stock Transferred To Another Electrician (all dates)",
-      ["Date", "Product", "To", "Qty"],
-      input.transferredOut.map((row) => [row.date, row.product, row.to || "-", String(row.qty)]),
+      ["Date", "Product", "To", "Tracking", "Qty"],
+      input.transferredOut.map((row) => [row.date, row.product, row.to || "-", row.tracking || "-", String(row.qty)]),
       y + 26,
     );
   }
@@ -400,6 +400,7 @@ export function buildMovementDocketPdfBase64(input: MovementDocketInput, logo?: 
     ["Condition", input.condition],
   ];
   if (input.reference) details.push(["Reference", input.reference]);
+  if (input.tracking) details.push(["Tracking", input.tracking]);
   if (input.notes) details.push(["Notes", input.notes]);
   y = section(doc, "Details", ["Field", "Value"], details, y);
 
