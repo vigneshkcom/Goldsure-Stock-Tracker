@@ -216,6 +216,20 @@ export type ReportEmailBodyInput = {
   inTransit: { date: string; mode: string; product: string; qty: number }[];
 };
 
+// A one-page docket for a single stock movement (a transfer between
+// electricians, a return to the warehouse, an adjustment), so there is
+// something to print, sign or send with the stock.
+export type MovementDocketInput = {
+  title: string;
+  date: string;
+  fromName: string;
+  toName: string;
+  reference: string;
+  condition: string;
+  notes: string;
+  lines: { product: string; sku: string | null; quantity: number }[];
+};
+
 export type PackRequestInput = {
   requestType: string;
   reference: string;

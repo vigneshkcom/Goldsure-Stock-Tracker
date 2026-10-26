@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
 import {
   productDescription,
+  type MovementDocketInput,
   type PackRequestInput,
   type PickupSlipInput,
   type StockReportInput,
@@ -320,6 +321,57 @@ export function buildWarehouseReportPdfBase64(input: WarehouseReportInput, logo?
     ]),
     y + 26,
   );
+
+  const dataUri = doc.output("datauristring");
+  return dataUri.slice(dataUri.indexOf(",") + 1);
+}
+
+// A one-page docket for a single stock movement, with signature lines so it
+// can be printed and signed at the handover.
+export function buildMovementDocketPdfBase64(input: MovementDocketInput, logo?: string): string {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+  const headerBottom = drawLogoHeader(doc, logo);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.text(input.title, MARGIN, headerBottom + 24);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(90, 90, 90);
+  doc.text(input.date, MARGIN, headerBottom + 42);
+
+  let y = headerBottom + 68;
+  const details: string[][] = [
+    ["From", input.fromName || "-"],
+    ["To", input.toName || "-"],
+    ["Condition", input.condition],
+  ];
+  if (input.reference) details.push(["Reference", input.reference]);
+  if (input.notes) details.push(["Notes", input.notes]);
+  y = section(doc, "Details", ["Field", "Value"], details, y);
+
+  const total = input.lines.reduce((sum, line) => sum + line.quantity, 0);
+  y = section(
+    doc,
+    "Items",
+    ["Product", "SKU", "Quantity"],
+    [
+      ...input.lines.map((line) => [line.product, line.sku ?? "-", line.quantity.toLocaleString()]),
+      ["Total", "", total.toLocaleString()],
+    ],
+    y + 26,
+  );
+
+  // Signature lines, for a physical handover.
+  y += 54;
+  doc.setFontSize(10);
+  doc.setTextColor(90, 90, 90);
+  const half = (doc.internal.pageSize.getWidth() - MARGIN * 2 - 30) / 2;
+  doc.line(MARGIN, y, MARGIN + half, y);
+  doc.line(MARGIN + half + 30, y, MARGIN + half * 2 + 30, y);
+  doc.text("Released by (name and signature)", MARGIN, y + 14);
+  doc.text("Received by (name and signature)", MARGIN + half + 30, y + 14);
 
   const dataUri = doc.output("datauristring");
   return dataUri.slice(dataUri.indexOf(",") + 1);

@@ -47,7 +47,13 @@ import {
   type PickupLine,
   type StockReportInput,
 } from "./pickupSlip";
-import { buildPackPdfBase64, buildPickupPdfBase64, buildReportPdfBase64, buildWarehouseReportPdfBase64 } from "./reportPdf";
+import {
+  buildMovementDocketPdfBase64,
+  buildPackPdfBase64,
+  buildPickupPdfBase64,
+  buildReportPdfBase64,
+  buildWarehouseReportPdfBase64,
+} from "./reportPdf";
 import { formatJobDateTime, statusCardClass, statusChipClass, statusLabels } from "./warranty";
 import WarrantyTracker from "./WarrantyTracker";
 import type {
@@ -94,6 +100,19 @@ const movementActionLabels: Record<MovementType, string> = {
   faulty_collect: "Faulty collected",
   mark_faulty: "Mark stock faulty",
   adjustment: "Adjust count",
+};
+
+// Heading printed on a movement's docket.
+const movementDocketTitles: Record<MovementType, string> = {
+  opening: "Opening Stock Count",
+  receive: "Stock Received",
+  issue: "Stock Issue",
+  return: "Stock Return",
+  install: "Stock Installed",
+  customer_post: "Stock Posted To Customer",
+  faulty_collect: "Faulty Stock Collected",
+  mark_faulty: "Stock Marked Faulty",
+  adjustment: "Stock Adjustment",
 };
 
 const movementDescriptions: Record<MovementType, string> = {
@@ -1251,6 +1270,57 @@ export default function App() {
       setInstallQty({});
       setInstallReference("");
     }
+  }
+
+  // A printable docket for a stock movement, so a transfer or a return has
+  // paperwork that can travel with the stock and be signed at the handover.
+  function downloadMovementDocket(input: {
+    title: string;
+    date: string;
+    fromId: string | null;
+    toId: string | null;
+    reference: string;
+    condition: ProductCondition;
+    notes: string;
+    lines: { productId: string; quantity: number }[];
+  }) {
+    const nameOf = (id: string | null) => data.holders.find((holder) => holder.id === id)?.name ?? "";
+    const lines = input.lines
+      .map((line) => {
+        const product = data.products.find((item) => item.id === line.productId);
+        return { product: product?.name ?? "Unknown product", sku: product?.sku ?? null, quantity: line.quantity };
+      })
+      .filter((line) => line.quantity > 0);
+    if (!lines.length) {
+      setError("Enter a quantity for at least one product first.");
+      return;
+    }
+    setError(null);
+    const fromName = nameOf(input.fromId);
+    const toName = nameOf(input.toId);
+    // Dockets are filed by what moved and between whom, so they keep the full
+    // title rather than the first-name-only form used for slips.
+    const who = [fromName, toName].filter(Boolean).join(" to ");
+    const fileName = `${input.title}${who ? ` - ${who}` : ""} - ${formatSlipDate(input.date)}.pdf`.replace(
+      /[\\/:*?"<>|]/g,
+      "-",
+    );
+    downloadBase64Pdf(
+      fileName,
+      buildMovementDocketPdfBase64(
+        {
+          title: input.title,
+          date: formatDate(input.date),
+          fromName,
+          toName,
+          reference: input.reference.trim(),
+          condition: conditionLabels[input.condition],
+          notes: input.notes.trim(),
+          lines,
+        },
+        logoDataUri || undefined,
+      ),
+    );
   }
 
   // Stock moving straight from one electrician to another, without going back
@@ -2861,6 +2931,18 @@ export default function App() {
           {activeTab === "movements" && !ledgerFull ? (
             <section className="workspace-grid">
               <MovementForm
+                onDownloadDocket={() =>
+                  downloadMovementDocket({
+                    title: movementDocketTitles[movementType],
+                    date: movementDate,
+                    fromId: fromHolderId || null,
+                    toId: toHolderId || null,
+                    reference,
+                    condition: moveCondition,
+                    notes,
+                    lines: [{ productId, quantity: Number(quantity) }],
+                  })
+                }
                 activeHolders={activeHolders}
                 activeProducts={activeProducts}
                 adjustmentDirection={adjustmentDirection}
@@ -2966,6 +3048,19 @@ export default function App() {
               setTransferReference={setTransferReference}
               setTransferQty={setTransferQty}
               onTransferStock={handleTransferStock}
+              onDownloadTransferDocket={() => {
+                const to = technicians.find((holder) => holder.id === transferToId);
+                downloadMovementDocket({
+                  title: "Stock Transfer",
+                  date: transferDate,
+                  fromId: selectedElectricianId,
+                  toId: transferToId || null,
+                  reference: transferReference || (to ? `Transfer to ${to.name}` : "Transfer"),
+                  condition: "good",
+                  notes: "",
+                  lines: collectLines(transferQty),
+                });
+              }}
               onToggleLossCharged={toggleLossCharged}
               onDeleteMovement={deleteMovement}
               onDownloadPickupSlip={handleDownloadPickupSlip}
@@ -3777,7 +3872,9 @@ function MovementForm({
   setToHolderId,
   setTracking,
   onSubmit,
+  onDownloadDocket,
 }: {
+  onDownloadDocket: () => void;
   activeHolders: Holder[];
   activeProducts: Product[];
   adjustmentDirection: AdjustmentDirection;
@@ -4115,10 +4212,16 @@ function MovementForm({
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
         </label>
 
-        <button className="primary-button full-width" type="submit" disabled={submitting || !activeProducts.length || !activeHolders.length}>
-          <Plus size={18} />
-          Save movement
-        </button>
+        <div className="form-actions full-width">
+          <button className="secondary-button" type="button" onClick={onDownloadDocket} disabled={submitting}>
+            <Download size={18} />
+            Download PDF
+          </button>
+          <button className="primary-button" type="submit" disabled={submitting || !activeProducts.length || !activeHolders.length}>
+            <Plus size={18} />
+            Save movement
+          </button>
+        </div>
       </form>
     </section>
   );
@@ -5160,6 +5263,7 @@ function ElectriciansView({
   setTransferReference,
   setTransferQty,
   onTransferStock,
+  onDownloadTransferDocket,
   onToggleLossCharged,
   onDeleteMovement,
   onDownloadPickupSlip,
@@ -5226,6 +5330,7 @@ function ElectriciansView({
   setTransferReference: (value: string) => void;
   setTransferQty: (value: Record<string, string>) => void;
   onTransferStock: (event: FormEvent<HTMLFormElement>) => void;
+  onDownloadTransferDocket: () => void;
   onToggleLossCharged: (movement: Movement) => void;
   onDeleteMovement: (movementId: string) => void;
   onDownloadPickupSlip: () => void;
@@ -5851,6 +5956,15 @@ function ElectriciansView({
                           />
                         </label>
                         <div className="el-formfoot">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={onDownloadTransferDocket}
+                            disabled={submitting}
+                          >
+                            <Download size={18} />
+                            Download PDF
+                          </button>
                           <button
                             className="primary-button"
                             type="submit"
