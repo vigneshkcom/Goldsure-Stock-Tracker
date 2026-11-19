@@ -585,9 +585,13 @@ export default function App() {
     () =>
       activeHolders.filter((holder) => {
         if (holder.holder_type !== "technician") return true;
-        return activeProducts.some((product) => getBalance(goodBalanceMap, holder.id, product.id) !== 0);
+        return activeProducts.some(
+          (product) =>
+            getBalance(goodBalanceMap, holder.id, product.id) !== 0 ||
+            getBalance(faultyBalanceMap, holder.id, product.id) !== 0,
+        );
       }),
-    [activeHolders, activeProducts, goodBalanceMap],
+    [activeHolders, activeProducts, goodBalanceMap, faultyBalanceMap],
   );
 
   // Pending pickups sit on nobody's count, so they are tracked separately to
@@ -2989,6 +2993,7 @@ export default function App() {
               activeHolders={visibleDashboardHolders}
               activeProducts={activeProducts}
               balanceMap={goodBalanceMap}
+              faultyBalanceMap={faultyBalanceMap}
               pendingBalanceMap={pendingBalanceMap}
               latestMovement={latestMovement}
               negativeBalances={negativeBalances}
@@ -3562,6 +3567,7 @@ function DashboardView({
   activeHolders,
   activeProducts,
   balanceMap,
+  faultyBalanceMap,
   pendingBalanceMap,
   latestMovement,
   negativeBalances,
@@ -3580,6 +3586,7 @@ function DashboardView({
   activeHolders: Holder[];
   activeProducts: Product[];
   balanceMap: Map<string, number>;
+  faultyBalanceMap: Map<string, number>;
   pendingBalanceMap: Map<string, number>;
   latestMovement: Movement | undefined;
   negativeBalances: BalanceRow[];
@@ -3788,6 +3795,10 @@ function DashboardView({
                   (total, product) => total + getBalance(balanceMap, holder.id, product.id),
                   0,
                 );
+                const rowFaulty = activeProducts.reduce(
+                  (total, product) => total + getBalance(faultyBalanceMap, holder.id, product.id),
+                  0,
+                );
                 const rowTransit = activeProducts.reduce(
                   (total, product) => total + getBalance(pendingBalanceMap, holder.id, product.id),
                   0,
@@ -3802,9 +3813,11 @@ function DashboardView({
                     {activeProducts.map((product) => {
                       const value = getBalance(balanceMap, holder.id, product.id);
                       const transit = getBalance(pendingBalanceMap, holder.id, product.id);
+                      const faulty = getBalance(faultyBalanceMap, holder.id, product.id);
                       return (
                         <td className={value < 0 ? "numeric-cell negative-cell" : "numeric-cell"} key={product.id}>
                           {value.toLocaleString()}
+                          {faulty > 0 ? <span className="cell-faulty"> ({faulty.toLocaleString()} faulty)</span> : null}
                           {transit > 0 ? <em className="cell-transit">+{transit.toLocaleString()}</em> : null}
                         </td>
                       );
@@ -3814,7 +3827,10 @@ function DashboardView({
                         {rowTransit.toLocaleString()}
                       </td>
                     ) : null}
-                    <td className="numeric-cell total-cell">{rowTotal.toLocaleString()}</td>
+                    <td className="numeric-cell total-cell">
+                      {rowTotal.toLocaleString()}
+                      {rowFaulty > 0 ? <span className="cell-faulty"> ({rowFaulty.toLocaleString()} faulty)</span> : null}
+                    </td>
                   </tr>
                 );
               })}

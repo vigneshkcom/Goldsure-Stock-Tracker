@@ -4650,3 +4650,11 @@ td.transit-figure {
   font-weight: 600;
   color: var(--warning);
 }
+
+/* Faulty count shown in red beside the good count in the holder matrix. */
+.cell-faulty {
+  color: var(--rose, #dc2626);
+  font-size: 0.78em;
+  font-weight: 700;
+  white-space: nowrap;
+}
