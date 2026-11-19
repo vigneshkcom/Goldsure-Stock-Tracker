@@ -3817,7 +3817,7 @@ function DashboardView({
                       return (
                         <td className={value < 0 ? "numeric-cell negative-cell" : "numeric-cell"} key={product.id}>
                           {value.toLocaleString()}
-                          {faulty > 0 ? <span className="cell-faulty"> ({faulty.toLocaleString()} faulty)</span> : null}
+                          {faulty > 0 ? <b className="cell-faulty" title={`${faulty.toLocaleString()} faulty`}>{" "}({faulty.toLocaleString()}F)</b> : null}
                           {transit > 0 ? <em className="cell-transit">+{transit.toLocaleString()}</em> : null}
                         </td>
                       );
@@ -3829,7 +3829,7 @@ function DashboardView({
                     ) : null}
                     <td className="numeric-cell total-cell">
                       {rowTotal.toLocaleString()}
-                      {rowFaulty > 0 ? <span className="cell-faulty"> ({rowFaulty.toLocaleString()} faulty)</span> : null}
+                      {rowFaulty > 0 ? <b className="cell-faulty" title={`${rowFaulty.toLocaleString()} faulty`}>{" "}({rowFaulty.toLocaleString()}F)</b> : null}
                     </td>
                   </tr>
                 );

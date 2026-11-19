@@ -4651,10 +4651,12 @@ td.transit-figure {
   color: var(--warning);
 }
 
-/* Faulty count shown in red beside the good count in the holder matrix. */
-.cell-faulty {
+/* Faulty count shown in red, inline beside the good count: 39 (2F). */
+.dashboard-data-table td b.cell-faulty {
+  display: inline;
   color: var(--rose, #dc2626);
-  font-size: 0.78em;
+  font-size: 0.72em;
   font-weight: 700;
   white-space: nowrap;
+  margin-left: 2px;
 }
