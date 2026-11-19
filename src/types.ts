@@ -22,6 +22,8 @@ export type MovementType =
   | "mark_faulty"
   | "warehouse_transfer"
   | "tested_good"
+  | "supplier_return"
+  | "supplier_replacement"
   | "adjustment";
 
 export type Product = {

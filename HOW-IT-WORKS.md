@@ -80,8 +80,15 @@ Movements tab → **Move Stock**:
 
 Delete both rows if you undo a *Tested OK*.
 
+### Faulty stock sent back to the supplier
+
+| What happened | Use | Effect |
+|---|---|---|
+| Faulty units posted back to the supplier | **Send faulty back to supplier** (put the RMA / tracking in Reference / Tracking) | Warehouse's faulty count drops. The Dashboard lists what the supplier still owes |
+| Replacements arrive | **Receive replacement from supplier** | Warehouse gains good stock. "Still owed" goes down |
+
 > The new types need the SQL in `supabase/schema.sql` run once in Supabase
-> (the `stock_movements_movement_type_check` constraint), or saving will fail.
+> (the `stock_movements_movement_type_check` constraint; it now also lists `supplier_return` and `supplier_replacement`), or saving will fail.
 
 ---
 
