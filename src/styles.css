@@ -4724,3 +4724,9 @@ b.el-faulty {
 .ledger-matrix .ledger-route { display: block; margin-top: 4px; }
 .ledger-matrix .mh-num { color: var(--ink, #1d1f2f); }
 .ledger-matrix .mh-num.none { color: #b5b8c4; }
+
+.mh-expand { display: block; margin-top: 3px; padding: 0; background: none; border: 0; color: var(--muted); font-size: 0.72rem; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.mh-table tr.mh-child td { background: #fafbfd; padding-top: 6px; padding-bottom: 6px; }
+.mh-table tr.mh-child td:nth-child(2) { padding-left: 28px; }
+.mh-table tr.mh-child .mh-num { font-size: 0.9rem; }
+.mh-table tr.mh-child.mh-selected td { background: #fdeef0; }

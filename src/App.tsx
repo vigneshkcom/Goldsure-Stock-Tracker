@@ -30,7 +30,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { workbookSeed } from "./data/seed";
 import { businessDateValue, businessDottedDate, dateOnlyDate, dateOnlyValue, formatDateOnly } from "./dateTime";
 import { supabase, supabaseConfigured } from "./lib/supabase";
@@ -5810,7 +5810,9 @@ function ElectriciansView({
   const [rosterTerm, setRosterTerm] = useState("");
   // History tab: pick rows with checkboxes, then delete the selection.
   const [historySelecting, setHistorySelecting] = useState(false);
+  // Selected movement ids (so a single entry inside a clubbed row can be picked).
   const [historySelected, setHistorySelected] = useState<Set<string>>(new Set());
+  const [historyExpanded, setHistoryExpanded] = useState<Set<string>>(new Set());
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const initialsOf = (name: string) =>
     name
@@ -6901,6 +6903,7 @@ function ElectriciansView({
                         condition: ProductCondition;
                         isIn: boolean;
                         ids: string[];
+                        items: Movement[];
                         references: string[];
                         byProduct: Map<string, number>;
                       };
@@ -6920,6 +6923,7 @@ function ElectriciansView({
                             condition,
                             isIn,
                             ids: [],
+                            items: [],
                             references: [],
                             byProduct: new Map(),
                           };
@@ -6928,25 +6932,35 @@ function ElectriciansView({
                         }
                         if (reference && !group.references.includes(reference)) group.references.push(reference);
                         group.ids.push(movement.id);
+                        group.items.push(movement);
                         group.byProduct.set(
                           movement.product_id,
                           (group.byProduct.get(movement.product_id) ?? 0) + (isIn ? movement.quantity : -movement.quantity),
                         );
                       });
 
-                      const selectedIds = groups.filter((group) => historySelected.has(group.key)).flatMap((group) => group.ids);
+                      const allIds = groups.flatMap((group) => group.ids);
+                      const selectedIds = allIds.filter((id) => historySelected.has(id));
                       const stopSelecting = () => {
                         setHistorySelecting(false);
                         setHistorySelected(new Set());
                       };
-                      const toggleGroup = (key: string) =>
+                      // Tick or untick a whole row (every entry in it) or a single entry.
+                      const toggleIds = (ids: string[]) =>
                         setHistorySelected((current) => {
+                          const next = new Set(current);
+                          const everySelected = ids.every((id) => next.has(id));
+                          ids.forEach((id) => (everySelected ? next.delete(id) : next.add(id)));
+                          return next;
+                        });
+                      const toggleExpanded = (key: string) =>
+                        setHistoryExpanded((current) => {
                           const next = new Set(current);
                           if (next.has(key)) next.delete(key);
                           else next.add(key);
                           return next;
                         });
-                      const allSelected = groups.length > 0 && groups.every((group) => historySelected.has(group.key));
+                      const allSelected = allIds.length > 0 && allIds.every((id) => historySelected.has(id));
 
                       return (
                         <div className="mh-card">
@@ -6958,7 +6972,7 @@ function ElectriciansView({
                                     className="secondary-button sm"
                                     type="button"
                                     onClick={() =>
-                                      setHistorySelected(allSelected ? new Set() : new Set(groups.map((group) => group.key)))
+                                      setHistorySelected(allSelected ? new Set() : new Set(allIds))
                                     }
                                   >
                                     {allSelected ? "Clear all" : "Select all"}
@@ -7016,54 +7030,115 @@ function ElectriciansView({
                                 </tr>
                               </thead>
                               <tbody>
-                                {groups.map((group) => (
-                                  <tr
-                                    key={group.key}
-                                    className={historySelected.has(group.key) ? "mh-selected" : ""}
-                                    onClick={historySelecting ? () => toggleGroup(group.key) : undefined}
-                                  >
-                                    {historySelecting ? (
-                                      <td className="mh-check">
-                                        <input
-                                          type="checkbox"
-                                          checked={historySelected.has(group.key)}
-                                          onChange={() => toggleGroup(group.key)}
-                                          onClick={(event) => event.stopPropagation()}
-                                          aria-label="Select this movement"
-                                        />
-                                      </td>
-                                    ) : null}
-                                    <td>
-                                      <strong>{formatDate(group.date)}</strong>
-                                      <span
-                                        className={`mh-type ${group.isIn ? "in" : "out"}`}
-                                        title={group.references.join(", ")}
+                                {groups.map((group) => {
+                                  const pickedCount = group.ids.filter((id) => historySelected.has(id)).length;
+                                  const fully = pickedCount === group.ids.length;
+                                  const multi = group.ids.length > 1;
+                                  const expanded = historyExpanded.has(group.key);
+                                  return (
+                                    <Fragment key={group.key}>
+                                      <tr
+                                        className={pickedCount > 0 ? "mh-selected" : ""}
+                                        onClick={historySelecting ? () => toggleIds(group.ids) : undefined}
                                       >
-                                        {movementLabels[group.type]}
-                                        {group.condition === "faulty" ? " · Faulty" : ""}
-                                        {group.references.length > 0
-                                          ? ` · ${
-                                              group.references.length <= 2
-                                                ? group.references.join(", ")
-                                                : `${group.references.slice(0, 2).join(", ")} +${group.references.length - 2} more`
-                                            }`
-                                          : ""}
-                                        {group.ids.length > 1 ? ` (${group.ids.length} entries)` : ""}
-                                      </span>
-                                    </td>
-                                    {activeProducts.map((product) => {
-                                      const value = group.byProduct.get(product.id);
-                                      return (
-                                        <td
-                                          className={`mh-num ${value === undefined ? "none" : value > 0 ? "in" : "out"}`}
-                                          key={product.id}
-                                        >
-                                          {value === undefined ? "—" : `${value > 0 ? "+" : ""}${value.toLocaleString()}`}
+                                        {historySelecting ? (
+                                          <td className="mh-check">
+                                            <input
+                                              type="checkbox"
+                                              checked={fully}
+                                              ref={(element) => {
+                                                if (element) element.indeterminate = pickedCount > 0 && !fully;
+                                              }}
+                                              onChange={() => toggleIds(group.ids)}
+                                              onClick={(event) => event.stopPropagation()}
+                                              aria-label="Select all entries in this row"
+                                            />
+                                          </td>
+                                        ) : null}
+                                        <td>
+                                          <strong>{formatDate(group.date)}</strong>
+                                          <span
+                                            className={`mh-type ${group.isIn ? "in" : "out"}`}
+                                            title={group.references.join(", ")}
+                                          >
+                                            {movementLabels[group.type]}
+                                            {group.condition === "faulty" ? " · Faulty" : ""}
+                                            {group.references.length > 0
+                                              ? ` · ${
+                                                  group.references.length <= 2
+                                                    ? group.references.join(", ")
+                                                    : `${group.references.slice(0, 2).join(", ")} +${group.references.length - 2} more`
+                                                }`
+                                              : ""}
+                                          </span>
+                                          {multi ? (
+                                            <button
+                                              type="button"
+                                              className="mh-expand"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                toggleExpanded(group.key);
+                                              }}
+                                            >
+                                              {expanded ? "Hide" : "Show"} {group.ids.length} entries
+                                            </button>
+                                          ) : null}
                                         </td>
-                                      );
-                                    })}
-                                  </tr>
-                                ))}
+                                        {activeProducts.map((product) => {
+                                          const value = group.byProduct.get(product.id);
+                                          return (
+                                            <td
+                                              className={`mh-num ${value === undefined ? "none" : value > 0 ? "in" : "out"}`}
+                                              key={product.id}
+                                            >
+                                              {value === undefined ? "—" : `${value > 0 ? "+" : ""}${value.toLocaleString()}`}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                      {multi && expanded
+                                        ? group.items.map((movement) => {
+                                            const picked = historySelected.has(movement.id);
+                                            const reference = [movement.job_number, movement.reference].filter(Boolean).join(" / ");
+                                            return (
+                                              <tr
+                                                key={movement.id}
+                                                className={`mh-child${picked ? " mh-selected" : ""}`}
+                                                onClick={historySelecting ? () => toggleIds([movement.id]) : undefined}
+                                              >
+                                                {historySelecting ? (
+                                                  <td className="mh-check">
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={picked}
+                                                      onChange={() => toggleIds([movement.id])}
+                                                      onClick={(event) => event.stopPropagation()}
+                                                      aria-label="Select this entry"
+                                                    />
+                                                  </td>
+                                                ) : null}
+                                                <td>
+                                                  <span className={`mh-type ${group.isIn ? "in" : "out"}`}>
+                                                    {reference || movementLabels[group.type]}
+                                                  </span>
+                                                </td>
+                                                {activeProducts.map((product) => (
+                                                  <td
+                                                    className={`mh-num ${product.id === movement.product_id ? (group.isIn ? "in" : "out") : "none"}`}
+                                                    key={product.id}
+                                                  >
+                                                    {product.id === movement.product_id
+                                                      ? `${group.isIn ? "+" : "-"}${movement.quantity.toLocaleString()}`
+                                                      : "—"}
+                                                  </td>
+                                                ))}
+                                              </tr>
+                                            );
+                                          })
+                                        : null}
+                                    </Fragment>
+                                  );
+                                })}
                                 {groups.length === 0 ? (
                                   <tr>
                                     <td colSpan={activeProducts.length + 2} className="muted">
