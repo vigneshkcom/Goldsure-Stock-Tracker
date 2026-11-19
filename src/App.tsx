@@ -7031,6 +7031,21 @@ function ElectriciansView({
                         });
                       const allSelected = allIds.length > 0 && allIds.every((id) => historySelected.has(id));
 
+                      // Club the day rows into week-ending-Sunday boxes, newest first.
+                      type HistoryWeek = { key: string; groups: HistoryGroup[]; ids: string[]; net: Map<string, number> };
+                      const weekMap = new Map<string, HistoryWeek>();
+                      groups.forEach((group) => {
+                        const key = weekEndingSunday(group.date);
+                        const week = weekMap.get(key) ?? { key, groups: [], ids: [], net: new Map<string, number>() };
+                        week.groups.push(group);
+                        week.ids.push(...group.ids);
+                        group.byProduct.forEach((value, productId) =>
+                          week.net.set(productId, (week.net.get(productId) ?? 0) + value),
+                        );
+                        weekMap.set(key, week);
+                      });
+                      const weeks = Array.from(weekMap.values()).sort((x, y) => y.key.localeCompare(x.key));
+
                       return (
                         <div className="mh-card">
                           <div className="mh-head">
@@ -7085,21 +7100,43 @@ function ElectriciansView({
                             {!historySelecting ? <span className="mh-chip mh-right">Newest first</span> : null}
                           </div>
 
-                          <div className="responsive-table">
-                            <table className="mh-table">
-                              <thead>
-                                <tr>
-                                  {historySelecting ? <th className="mh-check" /> : null}
-                                  <th>Date</th>
-                                  {activeProducts.map((product) => (
-                                    <th className="mh-num" key={product.id}>
-                                      {product.sku ?? product.name}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {groups.map((group) => {
+                          {weeks.map((week) => {
+                            const weekPicked = week.ids.filter((id) => historySelected.has(id)).length;
+                            const weekFully = weekPicked === week.ids.length;
+                            return (
+                              <div className="mh-week" key={week.key}>
+                                <div className="mh-week-head">
+                                  {historySelecting ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={weekFully}
+                                      ref={(element) => {
+                                        if (element) element.indeterminate = weekPicked > 0 && !weekFully;
+                                      }}
+                                      onChange={() => toggleIds(week.ids)}
+                                      aria-label="Select the whole week"
+                                    />
+                                  ) : null}
+                                  <strong>{formatWeekEnding(week.key)}</strong>
+                                  <span>
+                                    {week.ids.length} movement{week.ids.length === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                                <div className="responsive-table">
+                                  <table className="mh-table">
+                                    <thead>
+                                      <tr>
+                                        {historySelecting ? <th className="mh-check" /> : null}
+                                        <th>Date</th>
+                                        {activeProducts.map((product) => (
+                                          <th className="mh-num" key={product.id}>
+                                            {product.sku ?? product.name}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                {week.groups.map((group) => {
                                   const pickedCount = group.ids.filter((id) => historySelected.has(id)).length;
                                   const fully = pickedCount === group.ids.length;
                                   const multi = group.ids.length > 1;
@@ -7213,16 +7250,30 @@ function ElectriciansView({
                                     </Fragment>
                                   );
                                 })}
-                                {groups.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={activeProducts.length + 2} className="muted">
-                                      No movements yet for this electrician.
-                                    </td>
-                                  </tr>
-                                ) : null}
-                              </tbody>
-                            </table>
-                          </div>
+                                    </tbody>
+                                    <tfoot>
+                                      <tr>
+                                        {historySelecting ? <td className="mh-check" /> : null}
+                                        <td>Week net</td>
+                                        {activeProducts.map((product) => {
+                                          const value = week.net.get(product.id);
+                                          return (
+                                            <td
+                                              className={`mh-num ${value === undefined || value === 0 ? "none" : value > 0 ? "in" : "out"}`}
+                                              key={product.id}
+                                            >
+                                              {value === undefined ? "—" : `${value > 0 ? "+" : ""}${value.toLocaleString()}`}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {groups.length === 0 ? <p className="muted">No movements yet for this electrician.</p> : null}
                           <p className="mh-legend">
                             <span className="in">Blue = stock received</span>
                             <span className="out">Red = stock used</span>
