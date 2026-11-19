@@ -74,7 +74,7 @@ const LOCAL_STORAGE_KEY = "stock-tracker-data-v1";
 
 // Move Stock covers warehouse-level actions only. Issuing and installing stock
 // for electricians lives on the Electricians tab, so they are not offered here.
-const generalMovementTypes: MovementType[] = ["opening", "receive", "return", "mark_faulty", "adjustment"];
+const generalMovementTypes: MovementType[] = ["opening", "receive", "return", "warehouse_transfer", "mark_faulty", "tested_good", "adjustment"];
 
 const movementLabels: Record<MovementType, string> = {
   opening: "Opening",
@@ -85,6 +85,8 @@ const movementLabels: Record<MovementType, string> = {
   customer_post: "Post to customer",
   faulty_collect: "Faulty collected",
   mark_faulty: "Marked faulty",
+  warehouse_transfer: "Warehouse transfer",
+  tested_good: "Tested good",
   adjustment: "Adjustment",
 };
 
@@ -99,6 +101,8 @@ const movementActionLabels: Record<MovementType, string> = {
   customer_post: "Post to customer",
   faulty_collect: "Faulty collected",
   mark_faulty: "Mark stock faulty",
+  warehouse_transfer: "Transfer between warehouses",
+  tested_good: "Tested OK (faulty → good)",
   adjustment: "Adjust count",
 };
 
@@ -112,6 +116,8 @@ const movementDocketTitles: Record<MovementType, string> = {
   customer_post: "Stock Posted To Customer",
   faulty_collect: "Faulty Stock Collected",
   mark_faulty: "Stock Marked Faulty",
+  warehouse_transfer: "Warehouse Transfer",
+  tested_good: "Stock Tested And Marked Good",
   adjustment: "Stock Adjustment",
 };
 
@@ -124,6 +130,8 @@ const movementDescriptions: Record<MovementType, string> = {
   customer_post: "Replacement stock posted to a customer (managed on the Warranty tab).",
   faulty_collect: "A faulty unit is collected and held by the electrician (Warranty tab).",
   mark_faulty: "A holder's good stock is now faulty. Moves it from good to faulty for the same holder.",
+  warehouse_transfer: "Move good or faulty stock from one warehouse to another.",
+  tested_good: "Faulty stock was tested and is fine. Moves it from faulty to good in the same warehouse, ready to send out.",
   adjustment: "Manually correct a count up or down (e.g. stocktake, loss, found stock).",
 };
 
@@ -136,6 +144,8 @@ const movementTone: Record<MovementType, string> = {
   customer_post: "info",
   faulty_collect: "warning",
   mark_faulty: "warning",
+  warehouse_transfer: "info",
+  tested_good: "positive",
   adjustment: "neutral",
 };
 
@@ -2539,6 +2549,21 @@ export default function App() {
         fromId = fromHolderId || technicians[0]?.id || activeHolders[0]?.id || null;
       }
 
+      if (movementType === "warehouse_transfer") {
+        fromId = fromHolderId || warehouses[0]?.id || null;
+        toId = toHolderId || null;
+        if (!fromId || !toId || fromId === toId) {
+          setError("Choose two different warehouses to transfer between.");
+          return;
+        }
+      }
+
+      // Tested OK happens in place: the warehouse loses faulty stock and gains
+      // the same amount of good stock.
+      if (movementType === "tested_good") {
+        fromId = fromHolderId || warehouses[0]?.id || null;
+      }
+
       if (movementType === "install") {
         fromId = fromHolderId || technicians[0]?.id || null;
       }
@@ -2559,7 +2584,12 @@ export default function App() {
     }
 
     // Only a return can move faulty stock; everything else is good stock.
-    const condition: ProductCondition = movementType === "return" || isReconcile ? moveCondition : "good";
+    const condition: ProductCondition =
+      movementType === "return" || movementType === "warehouse_transfer" || isReconcile
+        ? moveCondition
+        : movementType === "tested_good"
+          ? "faulty"
+          : "good";
 
     if (fromId) {
       const balanceForCondition = condition === "faulty" ? faultyBalanceMap : goodBalanceMap;
@@ -2593,6 +2623,24 @@ export default function App() {
         await saveMovements([
           { ...base, id: crypto.randomUUID(), product_condition: "good", from_holder_id: fromId, to_holder_id: null },
           { ...base, id: crypto.randomUUID(), product_condition: "faulty", from_holder_id: null, to_holder_id: fromId },
+        ]);
+      } else if (movementType === "tested_good") {
+        const base = {
+          movement_date: movementDate,
+          movement_type: "tested_good" as MovementType,
+          product_id: productId,
+          quantity: parsedQuantity,
+          warranty_job_id: null,
+          job_number: null,
+          customer_name: null,
+          reference: reference.trim() || null,
+          tracking: null,
+          notes: notes.trim() || "Faulty stock tested OK and marked good.",
+          created_at: new Date().toISOString(),
+        };
+        await saveMovements([
+          { ...base, id: crypto.randomUUID(), product_condition: "faulty", from_holder_id: fromId, to_holder_id: null },
+          { ...base, id: crypto.randomUUID(), product_condition: "good", from_holder_id: null, to_holder_id: fromId },
         ]);
       } else {
         await saveMovement({
@@ -3981,19 +4029,28 @@ function MovementForm({
     movementType === "return" ||
     movementType === "install" ||
     movementType === "mark_faulty" ||
+    movementType === "warehouse_transfer" ||
+    movementType === "tested_good" ||
     movementType === "adjustment";
   const showTo =
     movementType === "opening" ||
     movementType === "receive" ||
     movementType === "issue" ||
+    movementType === "warehouse_transfer" ||
     movementType === "return";
   const fromOptions =
-    movementType === "issue" ? warehouses : movementType === "return" || movementType === "install" ? technicians : activeHolders;
+    movementType === "issue" || movementType === "warehouse_transfer" || movementType === "tested_good" ? warehouses : movementType === "return" || movementType === "install" ? technicians : activeHolders;
   const toOptions =
-    movementType === "issue" ? technicians : movementType === "return" || movementType === "receive" ? warehouses : activeHolders;
+    movementType === "issue"
+      ? technicians
+      : movementType === "return" || movementType === "receive" || movementType === "warehouse_transfer"
+        ? warehouses
+        : activeHolders;
   // Returns can move faulty stock; use the faulty balances so the picker,
   // the available hint and the over-return guard all reflect faulty counts.
-  const isFaultyReturn = movementType === "return" && moveCondition === "faulty";
+  const isFaultyReturn =
+    ((movementType === "return" || movementType === "warehouse_transfer") && moveCondition === "faulty") ||
+    movementType === "tested_good";
   const activeBalanceMap = isFaultyReturn ? faultyBalanceMap : balanceMap;
   const available = showFrom ? getBalance(activeBalanceMap, fromHolderId, productId) : null;
   // Reconcile ("physical stocktake count") derivations.
@@ -4094,7 +4151,7 @@ function MovementForm({
           </div>
         ) : null}
 
-        {movementType === "return" ? (
+        {movementType === "return" || movementType === "warehouse_transfer" ? (
           <label className="full-width">
             Stock condition
             <div className="segmented-control" role="group" aria-label="Stock condition">
@@ -4131,6 +4188,8 @@ function MovementForm({
           <label className="full-width">
             {movementType === "mark_faulty"
               ? "Holder (whose good stock is faulty)"
+              : movementType === "tested_good"
+                ? "Warehouse (holding the tested stock)"
               : movementType === "adjustment"
                 ? "Holder (to adjust)"
                 : "From (stock leaves here)"}
@@ -4243,6 +4302,13 @@ function MovementForm({
                 {" "}
                 <span className="preview-flow">
                   {fromLabel || "holder"}: good <ArrowRight size={14} /> faulty
+                </span>
+              </>
+            ) : movementType === "tested_good" ? (
+              <>
+                {" "}
+                <span className="preview-flow">
+                  {fromLabel || "warehouse"}: faulty <ArrowRight size={14} /> good
                 </span>
               </>
             ) : fromLabel ? (

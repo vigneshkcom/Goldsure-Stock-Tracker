@@ -68,6 +68,23 @@ be squinting at in six months.
 
 ---
 
+## Moving faulty stock between warehouses
+
+Movements tab → **Move Stock**:
+
+| What happened | Use | Effect |
+|---|---|---|
+| Faulty (or good) stock goes from one warehouse to another | **Transfer between warehouses** → pick *Faulty stock* | Source warehouse drops, destination gains, same condition |
+| The receiving warehouse tested it and it's fine | **Tested OK (faulty → good)** | Same warehouse: faulty drops, good rises. Writes **two** rows |
+| Send the now-good stock on | Electricians → pick them → **Give stock** / **Request stock** | Normal warehouse → electrician |
+
+Delete both rows if you undo a *Tested OK*.
+
+> The new types need the SQL in `supabase/schema.sql` run once in Supabase
+> (the `stock_movements_movement_type_check` constraint), or saving will fail.
+
+---
+
 ## Fixing a mistake
 
 Open the movement in **Movements** and delete it. The balances recalculate

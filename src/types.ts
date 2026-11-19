@@ -20,6 +20,8 @@ export type MovementType =
   | "customer_post"
   | "faulty_collect"
   | "mark_faulty"
+  | "warehouse_transfer"
+  | "tested_good"
   | "adjustment";
 
 export type Product = {

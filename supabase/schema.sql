@@ -53,7 +53,7 @@ create table if not exists public.stock_movements (
   user_id uuid,
   movement_date date not null default current_date,
   movement_type text not null check (
-    movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment')
+    movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'warehouse_transfer', 'tested_good', 'adjustment')
   ),
   product_condition text not null default 'good' check (product_condition in ('good', 'faulty')),
   movement_status text not null default 'confirmed' check (movement_status in ('pending', 'confirmed')),
@@ -115,7 +115,7 @@ drop constraint if exists stock_movements_movement_type_check;
 
 alter table public.stock_movements
 add constraint stock_movements_movement_type_check
-check (movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'adjustment'));
+check (movement_type in ('opening', 'receive', 'issue', 'return', 'install', 'customer_post', 'faulty_collect', 'mark_faulty', 'warehouse_transfer', 'tested_good', 'adjustment'));
 
 alter table public.stock_movements
 drop constraint if exists stock_movements_movement_status_check;
