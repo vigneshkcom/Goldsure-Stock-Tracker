@@ -521,6 +521,10 @@ export default function App() {
   const [pickupQty, setPickupQty] = useState<Record<string, string>>({});
   const [pickupNotes, setPickupNotes] = useState("");
   const [pickupMode, setPickupMode] = useState<"Pickup" | "Delivery">("Pickup");
+  // Which warehouse a stock request comes out of ("" = Specific Freight, the
+  // default) and whether it is arranged by hand instead of emailed.
+  const [pickupWarehouseId, setPickupWarehouseId] = useState("");
+  const [pickupManual, setPickupManual] = useState(false);
   const [sendingSlip, setSendingSlip] = useState(false);
   // Electrician-to-electrician transfer.
   const [transferToId, setTransferToId] = useState("");
@@ -2148,12 +2152,53 @@ export default function App() {
 
   // After a pickup slip goes out, record the released stock as pending: it
   // leaves the warehouse immediately and waits for the pickup to be confirmed.
+  // The warehouse a request is taken from: the chosen one, else Specific Freight.
+  function defaultRequestWarehouse() {
+    return warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+  }
+
+  function resolveRequestWarehouse() {
+    return warehouses.find((holder) => holder.id === pickupWarehouseId) ?? defaultRequestWarehouse();
+  }
+
+  // Emails only go to Specific Freight, so any other warehouse is arranged by hand.
+  function isManualRequest() {
+    const chosen = resolveRequestWarehouse();
+    return pickupManual || !chosen || chosen.id !== defaultRequestWarehouse()?.id;
+  }
+
+  // "Arranged manually": no email, but record the request exactly as if the slip
+  // had been sent, so the stock leaves the warehouse and shows as in transit.
+  async function recordManualRequest() {
+    setError(null);
+    setMessage(null);
+    const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
+    const chosen = resolveRequestWarehouse();
+    const hasLines = activeProducts.some((product) => {
+      const quantity = Number(pickupQty[product.id]);
+      return Number.isInteger(quantity) && quantity > 0;
+    });
+    if (!electrician || !chosen || !hasLines) {
+      setError("Enter a quantity for at least one product first.");
+      return;
+    }
+    setSendingSlip(true);
+    try {
+      await createPendingPickup();
+      setPickupQty({});
+      setPickupNotes("");
+      setMessage(`Request recorded from ${chosen.name} (no email sent). It shows as in transit for ${electrician.name}.`);
+    } finally {
+      setSendingSlip(false);
+    }
+  }
+
   async function createPendingPickup() {
     const electrician = technicians.find((holder) => holder.id === selectedElectricianId);
     if (!electrician) return;
-    const freight =
-      warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+    const freight = resolveRequestWarehouse();
     if (!freight) return;
+    const manual = isManualRequest();
 
     const createdAt = new Date().toISOString();
     const pending = activeProducts
@@ -2172,7 +2217,7 @@ export default function App() {
         warranty_job_id: null,
         job_number: null,
         customer_name: null,
-        reference: `${pickupMode} slip`,
+        reference: manual ? `${pickupMode} request (manual)` : `${pickupMode} slip`,
         tracking: null,
         notes: pickupNotes.trim() || null,
         created_at: createdAt,
@@ -2184,8 +2229,8 @@ export default function App() {
     } catch (pendingError) {
       setError(
         pendingError instanceof Error
-          ? `Email sent, but the pending pickup could not be recorded: ${pendingError.message}`
-          : "Email sent, but the pending pickup could not be recorded.",
+          ? `${manual ? "Request" : "Email sent, but the pending pickup"} could not be recorded: ${pendingError.message}`
+          : `${manual ? "Request" : "Email sent, but the pending pickup"} could not be recorded.`,
       );
     }
   }
@@ -3138,6 +3183,11 @@ export default function App() {
               pickupQty={pickupQty}
               pickupNotes={pickupNotes}
               pickupMode={pickupMode}
+              pickupWarehouseId={pickupWarehouseId}
+              setPickupWarehouseId={setPickupWarehouseId}
+              pickupManual={pickupManual}
+              setPickupManual={setPickupManual}
+              onRecordManualRequest={recordManualRequest}
               sendingSlip={sendingSlip}
               setPickupReleaseDate={setPickupReleaseDate}
               setPickupQty={setPickupQty}
@@ -5385,6 +5435,11 @@ function ElectriciansView({
   pickupQty,
   pickupNotes,
   pickupMode,
+  pickupWarehouseId,
+  setPickupWarehouseId,
+  pickupManual,
+  setPickupManual,
+  onRecordManualRequest,
   sendingSlip,
   setPickupReleaseDate,
   setPickupQty,
@@ -5454,6 +5509,11 @@ function ElectriciansView({
   pickupQty: Record<string, string>;
   pickupNotes: string;
   pickupMode: "Pickup" | "Delivery";
+  pickupWarehouseId: string;
+  setPickupWarehouseId: (value: string) => void;
+  pickupManual: boolean;
+  setPickupManual: (value: boolean) => void;
+  onRecordManualRequest: () => void;
   sendingSlip: boolean;
   setPickupReleaseDate: (value: string) => void;
   setPickupQty: (value: Record<string, string>) => void;
@@ -6324,14 +6384,53 @@ function ElectriciansView({
 
                   {tab === "request" ? (
                     <>
+                      {(() => {
+                        const freightWarehouse =
+                          warehouses.find((holder) => holder.name.toLowerCase().includes("specific freight")) ?? warehouses[0];
+                        const chosenWarehouse = warehouses.find((holder) => holder.id === pickupWarehouseId) ?? freightWarehouse;
+                        const isFreight = !chosenWarehouse || chosenWarehouse.id === freightWarehouse?.id;
+                        const manual = pickupManual || !isFreight;
+                        return (
+                          <>
                       <p className="el-intro">
-                        {pickupMode === "Delivery"
-                          ? "Asks Specific Freight (Damien Doyle) to pack the stock and send dimensions so you can post it out"
-                          : "Emails a Stock Release Request to Specific Freight (Damien Doyle) to arrange pickup"}
-                        , CC {pickupConfig.freight.cc.join(", ")}
-                        {electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"}.
+                        {manual
+                          ? `Records a request from ${chosenWarehouse?.name ?? "the warehouse"} without sending any email. The stock leaves that warehouse now and shows as in transit until ${electrician.name} has it.`
+                          : pickupMode === "Delivery"
+                            ? "Asks Specific Freight (Damien Doyle) to pack the stock and send dimensions so you can post it out"
+                            : "Emails a Stock Release Request to Specific Freight (Damien Doyle) to arrange pickup"}
+                        {manual
+                          ? ""
+                          : `, CC ${pickupConfig.freight.cc.join(", ")}${
+                              electrician.email ? ` and ${electrician.name}` : " — add this electrician's email in Setup to CC them"
+                            }.`}
                       </p>
                       <div className="stack-form">
+                        <label>
+                          Request from
+                          <select
+                            value={chosenWarehouse?.id ?? ""}
+                            onChange={(event) => setPickupWarehouseId(event.target.value)}
+                          >
+                            {warehouses.map((holder) => (
+                              <option value={holder.id} key={holder.id}>
+                                {holder.name}
+                                {holder.id === freightWarehouse?.id ? " (default)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="check-row">
+                          <input
+                            type="checkbox"
+                            checked={manual}
+                            disabled={!isFreight}
+                            onChange={(event) => setPickupManual(event.target.checked)}
+                          />
+                          <span>
+                            Arranged manually — don't send an email
+                            {!isFreight ? " (emails only go to Specific Freight)" : ""}
+                          </span>
+                        </label>
                         <div className="seg-field">
                           <span className="seg-label">Fulfilment</span>
                           <div className="segmented" role="group" aria-label="Fulfilment method">
@@ -6400,12 +6499,26 @@ function ElectriciansView({
                             <Download size={18} />
                             Download PDF
                           </button>
-                          <button className="primary-button" type="button" onClick={onSendPickupSlip} disabled={sendingSlip}>
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={manual ? onRecordManualRequest : onSendPickupSlip}
+                            disabled={sendingSlip}
+                          >
                             <Truck size={18} />
-                            {sendingSlip ? "Sending…" : "Email to Specific Freight"}
+                            {sendingSlip
+                              ? manual
+                                ? "Recording…"
+                                : "Sending…"
+                              : manual
+                                ? `Record request from ${chosenWarehouse?.name ?? "warehouse"}`
+                                : "Email to Specific Freight"}
                           </button>
                         </div>
                       </div>
+                          </>
+                        );
+                      })()}
                     </>
                   ) : null}
 

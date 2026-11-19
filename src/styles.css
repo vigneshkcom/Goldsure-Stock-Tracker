@@ -4671,3 +4671,7 @@ b.el-faulty {
   white-space: nowrap;
 }
 .el-chip b.el-faulty { font-size: 0.85em; margin-left: 3px; }
+
+/* Checkbox row used for "arranged manually" on the Request stock tab. */
+.check-row { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.check-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
