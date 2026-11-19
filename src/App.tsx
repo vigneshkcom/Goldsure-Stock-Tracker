@@ -5672,10 +5672,14 @@ function ElectriciansView({
                     (total, product) => total + getBalance(goodBalanceMap, holder.id, product.id),
                     0,
                   ),
+                  faulty: activeProducts.reduce(
+                    (total, product) => total + getBalance(faultyBalanceMap, holder.id, product.id),
+                    0,
+                  ),
                 }));
               const withHand = rows.filter((row) => row.onHand > 0);
               const withoutHand = rows.filter((row) => row.onHand <= 0);
-              const renderRow = ({ holder, onHand }: { holder: Holder; onHand: number }) => {
+              const renderRow = ({ holder, onHand, faulty }: { holder: Holder; onHand: number; faulty: number }) => {
                 const last = lastActivityFor(holder.id);
                 return (
                   <button
@@ -5692,7 +5696,10 @@ function ElectriciansView({
                       </span>
                       <span className="el-sub">{last ? `Updated ${formatDate(last)}` : "No movements yet"}</span>
                     </span>
-                    <span className="el-chip">{onHand.toLocaleString()}</span>
+                    <span className="el-chip">
+                      {onHand.toLocaleString()}
+                      {faulty > 0 ? <b className="el-faulty">({faulty.toLocaleString()}F)</b> : null}
+                    </span>
                   </button>
                 );
               };
@@ -5758,14 +5765,21 @@ function ElectriciansView({
                 <div className="el-statstrip">
                   <div className="el-stat hero">
                     <span>On hand (good)</span>
-                    <strong>{totalOnHand.toLocaleString()}</strong>
+                    <strong>
+                      {totalOnHand.toLocaleString()}
+                      {totalFaulty > 0 ? <b className="el-faulty">({totalFaulty.toLocaleString()}F)</b> : null}
+                    </strong>
                   </div>
                   {activeProducts.map((product) => {
                     const inTransit = pendingByProduct.get(product.id) ?? 0;
+                    const productFaulty = getBalance(faultyBalanceMap, electrician.id, product.id);
                     return (
                       <div className="el-stat" key={product.id}>
                         <span>{product.sku ?? product.name}</span>
-                        <strong>{getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}</strong>
+                        <strong>
+                          {getBalance(goodBalanceMap, electrician.id, product.id).toLocaleString()}
+                          {productFaulty > 0 ? <b className="el-faulty">({productFaulty.toLocaleString()}F)</b> : null}
+                        </strong>
                         {inTransit > 0 ? (
                           <em className="el-stat-transit">+{inTransit.toLocaleString()} in transit</em>
                         ) : null}

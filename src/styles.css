@@ -4660,3 +4660,14 @@ td.transit-figure {
   white-space: nowrap;
   margin-left: 2px;
 }
+
+/* Faulty count in red beside a good count on the Electricians screen: 39 (2F). */
+b.el-faulty {
+  display: inline;
+  margin-left: 4px;
+  color: var(--rose, #dc2626);
+  font-size: 0.55em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.el-chip b.el-faulty { font-size: 0.85em; margin-left: 3px; }
