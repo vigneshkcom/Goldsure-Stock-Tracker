@@ -3729,27 +3729,6 @@ function DashboardView({
   const totalUnchargedUnits = lossSummary.reduce((total, row) => total + row.unchargedUnits, 0);
   return (
     <section className="dashboard-stack">
-      <div className="metric-grid">
-        <div className="metric-card">
-          <Boxes size={22} />
-          <span className="metric-label">
-            Good Stock
-            <small>All locations</small>
-          </span>
-          <strong>{totalStock.toLocaleString()}</strong>
-        </div>
-        {specificFreightTotals.map((item) => (
-          <div className="metric-card" key={item.sku}>
-            <Factory size={22} />
-            <span className="metric-label">
-              {item.sku}
-              <small>Specific Freight</small>
-            </span>
-            <strong>{item.quantity.toLocaleString()}</strong>
-          </div>
-        ))}
-      </div>
-
       {pendingPickups.length ? (
         <section className="panel pending-panel">
           <div className="panel-header">
