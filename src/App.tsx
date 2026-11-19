@@ -3780,7 +3780,7 @@ function DashboardView({
                   <span className="pending-meta">
                     {batch.fromName ? `${batch.fromName} → ${batch.holderName}` : batch.holderName} ·{" "}
                     {formatDate(batch.date)}
-                    {batch.reference ? ` · ${batch.reference}` : ""}
+                    {batch.reference ? <> · <LinkifiedCompact value={batch.reference} /></> : null}
                   </span>
                 </div>
                 <div className="pending-actions">
@@ -5220,7 +5220,7 @@ function WarrantyView({
                   {editingNotesId === selectedJob.id ? (
                     <textarea rows={5} value={draftNotes} onChange={(event) => setDraftNotes(event.target.value)} autoFocus />
                   ) : (
-                    <p className={selectedJob.notes ? "wj-notes-body" : "wj-notes-body muted"}>{selectedJob.notes || "No notes yet."}</p>
+                    <p className={selectedJob.notes ? "wj-notes-body" : "wj-notes-body muted"}>{selectedJob.notes ? <LinkifiedText value={selectedJob.notes} /> : "No notes yet."}</p>
                   )}
                 </div>
               ) : null}
@@ -5301,7 +5301,7 @@ function TrackingLink({ tracking }: { tracking: string | null | undefined }) {
   if (!looksUrl) return <span className="tracking-chip">Tracking: {value}</span>;
   const href = /^https?:\/\//i.test(value) ? value : `https://${value}`;
   return (
-    <a className="tracking-chip" href={href} target="_blank" rel="noopener noreferrer">
+    <a className="link-button" href={href} target="_blank" rel="noopener noreferrer">
       Tracking
     </a>
   );
@@ -5313,8 +5313,8 @@ function LinkifiedText({ value }: { value: string }) {
     <>
       {parts.map((part, index) =>
         /^https?:\/\//i.test(part) ? (
-          <a className="reference-link" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
-            {part}
+          <a className="link-button" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
+            Tracking
           </a>
         ) : (
           part
@@ -5326,13 +5326,13 @@ function LinkifiedText({ value }: { value: string }) {
 
 // Like LinkifiedText, but long URLs are collapsed to a short "Link" chip that
 // opens the address in a new tab, so a big workdrive URL does not fill the row.
-function LinkifiedCompact({ value, label = "Link" }: { value: string; label?: string }) {
+function LinkifiedCompact({ value, label = "Tracking" }: { value: string; label?: string }) {
   const parts = value.split(/(https?:\/\/[^\s]+)/gi);
   return (
     <>
       {parts.map((part, index) =>
         /^https?:\/\//i.test(part) ? (
-          <a className="reference-link ref-chip" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
+          <a className="link-button" href={part} target="_blank" rel="noopener noreferrer" key={`${part}-${index}`}>
             {label}
           </a>
         ) : (
@@ -6869,7 +6869,7 @@ function ElectriciansView({
                                           : "Not charged"}
                                       </button>
                                     </td>
-                                    <td>{movement.notes}</td>
+                                    <td>{movement.notes ? <LinkifiedText value={movement.notes} /> : null}</td>
                                     <td className="row-action">
                                       <button
                                         className="icon-button danger"
@@ -7063,13 +7063,18 @@ function ElectriciansView({
                                           >
                                             {movementLabels[group.type]}
                                             {group.condition === "faulty" ? " · Faulty" : ""}
-                                            {group.references.length > 0
-                                              ? ` · ${
-                                                  group.references.length <= 2
-                                                    ? group.references.join(", ")
-                                                    : `${group.references.slice(0, 2).join(", ")} +${group.references.length - 2} more`
-                                                }`
-                                              : ""}
+                                            {group.references.length > 0 ? (
+                                              <>
+                                                {" · "}
+                                                <LinkifiedCompact
+                                                  value={
+                                                    group.references.length <= 2
+                                                      ? group.references.join(", ")
+                                                      : `${group.references.slice(0, 2).join(", ")} +${group.references.length - 2} more`
+                                                  }
+                                                />
+                                              </>
+                                            ) : null}
                                           </span>
                                           {multi ? (
                                             <button
@@ -7119,7 +7124,7 @@ function ElectriciansView({
                                                 ) : null}
                                                 <td>
                                                   <span className={`mh-type ${group.isIn ? "in" : "out"}`}>
-                                                    {reference || movementLabels[group.type]}
+                                                    {reference ? <LinkifiedCompact value={reference} /> : movementLabels[group.type]}
                                                   </span>
                                                 </td>
                                                 {activeProducts.map((product) => (
