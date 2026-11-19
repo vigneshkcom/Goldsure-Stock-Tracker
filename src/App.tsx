@@ -6892,7 +6892,7 @@ function ElectriciansView({
 
                   {tab === "history" ? (
                     (() => {
-                      // One row per date / type / condition / direction / reference,
+                      // One row per date / type / condition / direction,
                       // with a column per product showing the net units.
                       type HistoryGroup = {
                         key: string;
@@ -6901,7 +6901,7 @@ function ElectriciansView({
                         condition: ProductCondition;
                         isIn: boolean;
                         ids: string[];
-                        reference: string;
+                        references: string[];
                         byProduct: Map<string, number>;
                       };
                       const groups: HistoryGroup[] = [];
@@ -6910,7 +6910,7 @@ function ElectriciansView({
                         const isIn = movement.to_holder_id === electrician.id;
                         const condition = getMovementCondition(movement);
                         const reference = [movement.job_number, movement.reference].filter(Boolean).join(" / ");
-                        const key = [movement.movement_date, movement.movement_type, condition, isIn ? "in" : "out", reference].join("|");
+                        const key = [movement.movement_date, movement.movement_type, condition, isIn ? "in" : "out"].join("|");
                         let group = index.get(key);
                         if (!group) {
                           group = {
@@ -6920,12 +6920,13 @@ function ElectriciansView({
                             condition,
                             isIn,
                             ids: [],
-                            reference,
+                            references: [],
                             byProduct: new Map(),
                           };
                           index.set(key, group);
                           groups.push(group);
                         }
+                        if (reference && !group.references.includes(reference)) group.references.push(reference);
                         group.ids.push(movement.id);
                         group.byProduct.set(
                           movement.product_id,
@@ -7034,10 +7035,20 @@ function ElectriciansView({
                                     ) : null}
                                     <td>
                                       <strong>{formatDate(group.date)}</strong>
-                                      <span className={`mh-type ${group.isIn ? "in" : "out"}`}>
+                                      <span
+                                        className={`mh-type ${group.isIn ? "in" : "out"}`}
+                                        title={group.references.join(", ")}
+                                      >
                                         {movementLabels[group.type]}
                                         {group.condition === "faulty" ? " · Faulty" : ""}
-                                        {group.reference ? ` · ${group.reference}` : ""}
+                                        {group.references.length > 0
+                                          ? ` · ${
+                                              group.references.length <= 2
+                                                ? group.references.join(", ")
+                                                : `${group.references.slice(0, 2).join(", ")} +${group.references.length - 2} more`
+                                            }`
+                                          : ""}
+                                        {group.ids.length > 1 ? ` (${group.ids.length} entries)` : ""}
                                       </span>
                                     </td>
                                     {activeProducts.map((product) => {
