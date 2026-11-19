@@ -5439,6 +5439,18 @@ function LedgerView({
     });
     return Array.from(rows.values());
   };
+  // Club the day groups into week-ending-Sunday boxes, newest first.
+  const ledgerWeeks = (() => {
+    const map = new Map<string, { key: string; groups: typeof movementGroups; ids: string[] }>();
+    movementGroups.forEach((group) => {
+      const key = weekEndingSunday(group.date);
+      const week = map.get(key) ?? { key, groups: [], ids: [] };
+      week.groups.push(group);
+      week.ids.push(...group.items.map((item) => item.id));
+      map.set(key, week);
+    });
+    return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
+  })();
   const allRows = movementGroups.flatMap((group) => rowsFor(group));
   const allIds = allRows.flatMap((row) => row.ids);
   const selectedIds = allIds.filter((id) => selectedKeys.has(id));
@@ -5553,15 +5565,27 @@ function LedgerView({
       </div>
 
       <div className="ledger-list">
-        {movementGroups.map((group) => {
+        <div className="mh-weeks">
+        {ledgerWeeks.map((week) => {
+          const weekPicked = week.ids.filter((id) => selectedKeys.has(id)).length;
+          const weekFully = weekPicked === week.ids.length;
           return (
-          <div className="ledger-group" key={`${group.date}|${group.install ? "week" : "day"}`}>
-            <div className="ledger-group-head">
-              <span className="ledger-group-date">
-                {group.install ? `Week ending ${formatDate(group.date)}` : formatDate(group.date)}
-              </span>
-              <span className="ledger-group-count">
-                {group.items.length} movement{group.items.length === 1 ? "" : "s"}
+          <div className="mh-week" key={week.key}>
+            <div className="mh-week-head">
+              {selecting ? (
+                <input
+                  type="checkbox"
+                  checked={weekFully}
+                  ref={(element) => {
+                    if (element) element.indeterminate = weekPicked > 0 && !weekFully;
+                  }}
+                  onChange={() => toggleIds(week.ids)}
+                  aria-label="Select the whole week"
+                />
+              ) : null}
+              <strong>{formatWeekEnding(week.key)}</strong>
+              <span>
+                {week.ids.length} movement{week.ids.length === 1 ? "" : "s"}
               </span>
             </div>
             <div className="responsive-table">
@@ -5578,7 +5602,7 @@ function LedgerView({
                   </tr>
                 </thead>
                 <tbody>
-                  {rowsFor(group).map((row) => {
+                  {week.groups.flatMap((group) => rowsFor(group).map((row) => ({ group, row }))).map(({ group, row }) => {
                     const movement = row.sample;
                     const reference = [movement.job_number, movement.customer_name, movement.reference]
                       .filter(Boolean)
@@ -5608,6 +5632,7 @@ function LedgerView({
                             </td>
                           ) : null}
                           <td>
+                            <strong className="ledger-date">{formatDate(group.date)}</strong>
                             <span className={`type-chip ${movementTone[movement.movement_type]}`}>
                               {movementLabels[movement.movement_type]}
                             </span>
@@ -5696,6 +5721,7 @@ function LedgerView({
           </div>
           );
         })}
+        </div>
 
         {visible.length === 0 ? <p className="ledger-empty muted">No movements to show.</p> : null}
         {hiddenCount > 0 ? (
@@ -7100,6 +7126,7 @@ function ElectriciansView({
                             {!historySelecting ? <span className="mh-chip mh-right">Newest first</span> : null}
                           </div>
 
+                          <div className="mh-weeks">
                           {weeks.map((week) => {
                             const weekPicked = week.ids.filter((id) => historySelected.has(id)).length;
                             const weekFully = weekPicked === week.ids.length;
@@ -7273,6 +7300,7 @@ function ElectriciansView({
                               </div>
                             );
                           })}
+                          </div>
                           {groups.length === 0 ? <p className="muted">No movements yet for this electrician.</p> : null}
                           <p className="mh-legend">
                             <span className="in">Blue = stock received</span>
