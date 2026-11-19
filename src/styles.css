@@ -4718,3 +4718,9 @@ b.el-faulty {
 .mh-head { align-items: center; }
 .mh-head > div:nth-child(2) { flex: 1; }
 .mh-right { margin-left: auto; }
+
+/* Movement ledger matrix: one row per movement group, a column per product. */
+.ledger-matrix .type-chip { margin-right: 6px; }
+.ledger-matrix .ledger-route { display: block; margin-top: 4px; }
+.ledger-matrix .mh-num { color: var(--ink, #1d1f2f); }
+.ledger-matrix .mh-num.none { color: #b5b8c4; }

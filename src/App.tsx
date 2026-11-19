@@ -3143,6 +3143,7 @@ export default function App() {
               searchTerm={searchTerm}
               submitting={submitting}
               deleteMovement={deleteMovement}
+              deleteMovements={deleteMovements}
               setMovementFilter={setMovementFilter}
               setSearchTerm={setSearchTerm}
               full
@@ -3213,6 +3214,7 @@ export default function App() {
                 searchTerm={searchTerm}
                 submitting={submitting}
                 deleteMovement={deleteMovement}
+                deleteMovements={deleteMovements}
                 setMovementFilter={setMovementFilter}
                 setSearchTerm={setSearchTerm}
                 onOpenFull={() => setLedgerFull(true)}
@@ -5348,6 +5350,7 @@ function LedgerView({
   searchTerm,
   submitting,
   deleteMovement,
+  deleteMovements,
   setMovementFilter,
   setSearchTerm,
   full = false,
@@ -5363,6 +5366,7 @@ function LedgerView({
   searchTerm: string;
   submitting: boolean;
   deleteMovement: (movementId: string) => void;
+  deleteMovements: (movementIds: string[]) => void;
   setMovementFilter: (value: MovementType | "all") => void;
   setSearchTerm: (value: string) => void;
   full?: boolean;
@@ -5387,6 +5391,11 @@ function LedgerView({
   const hiddenCount = full ? 0 : filteredMovements.length - visible.length;
   const holderLabel = holders.find((holder) => holder.id === holderId)?.name ?? "";
 
+  // Delete mode: tick rows, then delete the selection in one go.
+  const [selecting, setSelecting] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const ledgerProducts = data.products.filter((product) => product.active);
+
   // Group the visible movements into one card per date. Installs are dated to
   // the week-ending Sunday, so they get their own card headed "Week ending …"
   // even when a normal movement shares that calendar date.
@@ -5402,6 +5411,46 @@ function LedgerView({
     (a, b) => b.date.localeCompare(a.date) || (a.install === b.install ? 0 : a.install ? -1 : 1),
   );
 
+  // Inside a day, movements of the same type, route and reference share one row
+  // with a column per product.
+  type LedgerRow = { key: string; sample: Movement; ids: string[]; byProduct: Map<string, number> };
+  const rowsFor = (group: { date: string; install: boolean; items: Movement[] }) => {
+    const rows = new Map<string, LedgerRow>();
+    group.items.forEach((movement) => {
+      const key = [
+        group.date,
+        movement.movement_type,
+        getMovementCondition(movement),
+        movement.from_holder_id ?? "",
+        movement.to_holder_id ?? "",
+        movement.job_number ?? "",
+        movement.customer_name ?? "",
+        movement.reference ?? "",
+        movement.tracking ?? "",
+        movement.movement_status ?? "",
+      ].join("|");
+      const row = rows.get(key) ?? { key, sample: movement, ids: [], byProduct: new Map<string, number>() };
+      row.ids.push(movement.id);
+      row.byProduct.set(movement.product_id, (row.byProduct.get(movement.product_id) ?? 0) + movement.quantity);
+      rows.set(key, row);
+    });
+    return Array.from(rows.values());
+  };
+  const allRows = movementGroups.flatMap((group) => rowsFor(group));
+  const selectedIds = allRows.filter((row) => selectedKeys.has(row.key)).flatMap((row) => row.ids);
+  const allSelected = allRows.length > 0 && allRows.every((row) => selectedKeys.has(row.key));
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelectedKeys(new Set());
+  };
+  const toggleRow = (key: string) =>
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   return (
     <section className={`panel ledger-panel${full ? " ledger-full" : ""}`}>
       <div className="panel-header ledger-header">
@@ -5412,6 +5461,42 @@ function LedgerView({
               Back
             </button>
           ) : null}
+          {selecting ? (
+            <div className="mh-tools">
+              <button
+                className="secondary-button sm"
+                type="button"
+                onClick={() => setSelectedKeys(allSelected ? new Set() : new Set(allRows.map((row) => row.key)))}
+              >
+                {allSelected ? "Clear all" : "Select all"}
+              </button>
+              <button className="secondary-button sm" type="button" onClick={stopSelecting}>
+                Cancel
+              </button>
+              <button
+                className="danger-button sm"
+                type="button"
+                disabled={!selectedIds.length || submitting}
+                onClick={async () => {
+                  await deleteMovements(selectedIds);
+                  stopSelecting();
+                }}
+              >
+                <Trash2 size={15} />
+                Delete selected ({selectedIds.length})
+              </button>
+            </div>
+          ) : (
+            <button
+              className="secondary-button sm"
+              type="button"
+              disabled={!allRows.length}
+              onClick={() => setSelecting(true)}
+            >
+              <Trash2 size={15} />
+              Delete
+            </button>
+          )}
           <div>
             <h2>Movement Ledger{full && holderLabel ? ` — ${holderLabel}` : ""}</h2>
             <p>
@@ -5467,50 +5552,77 @@ function LedgerView({
                 {group.items.length} movement{group.items.length === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="ledger-group-items">
-              {group.items.map((movement) => {
-                const reference = [movement.job_number, movement.customer_name, movement.reference]
-                  .filter(Boolean)
-                  .join(" / ");
-                return (
-                  <div className="ledger-item" key={movement.id}>
-                    <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                      {movementLabels[movement.movement_type]}
-                    </span>
-                    <span className="ledger-main">
-                      <strong>
-                        {movement.quantity.toLocaleString()} × {productName(movement.product_id)}
-                        {isPendingMovement(movement) ? (
-                          <em className="pending-tag">
-                            In transit · {modeWords[fulfilmentModeOf(movement.reference)].waiting}
-                          </em>
+            <div className="responsive-table">
+              <table className="mh-table ledger-matrix">
+                <thead>
+                  <tr>
+                    {selecting ? <th className="mh-check" /> : null}
+                    <th>Movement</th>
+                    {ledgerProducts.map((product) => (
+                      <th className="mh-num" key={product.id}>
+                        {product.sku ?? product.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsFor(group).map((row) => {
+                    const movement = row.sample;
+                    const reference = [movement.job_number, movement.customer_name, movement.reference]
+                      .filter(Boolean)
+                      .join(" / ");
+                    return (
+                      <tr
+                        key={row.key}
+                        className={selectedKeys.has(row.key) ? "mh-selected" : ""}
+                        onClick={selecting ? () => toggleRow(row.key) : undefined}
+                      >
+                        {selecting ? (
+                          <td className="mh-check">
+                            <input
+                              type="checkbox"
+                              checked={selectedKeys.has(row.key)}
+                              onChange={() => toggleRow(row.key)}
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label="Select this movement"
+                            />
+                          </td>
                         ) : null}
-                      </strong>
-                      <span className="ledger-route">
-                        {routeText(movement)}
-                        {reference ? (
-                          <>
-                            {" · "}
-                            <LinkifiedCompact value={reference} />
-                          </>
-                        ) : null}
-                        {movement.tracking ? " · " : ""}
-                        <TrackingLink tracking={movement.tracking} />
-                      </span>
-                    </span>
-                    <button
-                      className="icon-button danger"
-                      type="button"
-                      title="Delete movement"
-                      aria-label="Delete movement"
-                      disabled={submitting}
-                      onClick={() => deleteMovement(movement.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                );
-              })}
+                        <td>
+                          <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                            {movementLabels[movement.movement_type]}
+                          </span>
+                          {getMovementCondition(movement) === "faulty" ? <em className="pending-tag">Faulty</em> : null}
+                          {isPendingMovement(movement) ? (
+                            <em className="pending-tag">
+                              In transit · {modeWords[fulfilmentModeOf(movement.reference)].waiting}
+                            </em>
+                          ) : null}
+                          <span className="ledger-route">
+                            {routeText(movement)}
+                            {reference ? (
+                              <>
+                                {" · "}
+                                <LinkifiedCompact value={reference} />
+                              </>
+                            ) : null}
+                            {movement.tracking ? " · " : ""}
+                            <TrackingLink tracking={movement.tracking} />
+                          </span>
+                        </td>
+                        {ledgerProducts.map((product) => {
+                          const value = row.byProduct.get(product.id);
+                          return (
+                            <td className={`mh-num ${value === undefined ? "none" : ""}`} key={product.id}>
+                              {value === undefined ? "—" : value.toLocaleString()}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
           );
