@@ -4775,3 +4775,25 @@ a.link-button:hover { filter: brightness(1.1); }
 
 /* One column of week boxes, scrolling down. Capped so dates stay near the numbers. */
 .mh-weeks { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+
+/* Narrow ledger / history panels: let the layout adapt to the panel, not the window. */
+.ledger-panel, .mh-card { container-type: inline-size; }
+@container (max-width: 680px) {
+  .ledger-header { flex-wrap: wrap; }
+  .ledger-head-left { flex-wrap: wrap; }
+  .ledger-tools { width: 100%; justify-content: flex-start; }
+  .ledger-tools .search-box { min-width: 0; flex: 1 1 140px; }
+  .ledger-tools select { flex: 1 1 120px; min-width: 0; }
+  .mh-week .mh-table th.mh-num, .mh-week .mh-table td.mh-num { width: 56px; padding: 4px 2px; font-size: 0.9rem; }
+  .mh-week .mh-table th.mh-num { font-size: 0.6rem; white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
+  .mh-week .mh-table th, .mh-week .mh-table td { padding-left: 8px; padding-right: 8px; }
+  .mh-week .mh-table td strong, .mh-week .mh-table .ledger-date { font-size: 0.95rem; }
+}
+
+/* Move Stock + ledger: stack them when the window is too narrow for both side by side. */
+@media (max-width: 1480px) {
+  .workspace-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 680px) {
+  .ledger-tools > * { flex: 1 1 140px; min-width: 0; }
+}
