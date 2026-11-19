@@ -6532,6 +6532,7 @@ function ElectriciansView({
                               <th>In</th>
                               <th>Out</th>
                               <th>Reference</th>
+                              <th></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -6558,12 +6559,24 @@ function ElectriciansView({
                                     {movement.tracking ? " " : ""}
                                     <TrackingLink tracking={movement.tracking} />
                                   </td>
+                                  <td className="row-action">
+                                    <button
+                                      className="icon-button danger"
+                                      type="button"
+                                      title="Delete movement"
+                                      aria-label="Delete movement"
+                                      disabled={submitting}
+                                      onClick={() => onDeleteMovement(movement.id)}
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </td>
                                 </tr>
                               );
                             })}
                             {history.length === 0 ? (
                               <tr>
-                                <td colSpan={6} className="muted">
+                                <td colSpan={7} className="muted">
                                   No movements yet for this electrician.
                                 </td>
                               </tr>
