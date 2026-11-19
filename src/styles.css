@@ -4772,3 +4772,6 @@ a.link-button:hover { filter: brightness(1.1); }
 .mh-week .mh-table th, .mh-week .mh-table td { padding-left: 10px; padding-right: 10px; }
 .mh-week .mh-table td:first-child:not(.mh-num) { overflow-wrap: anywhere; }
 .mh-week .mh-table { min-width: 0; }
+
+/* One column of week boxes, scrolling down. Capped so dates stay near the numbers. */
+.mh-weeks { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
