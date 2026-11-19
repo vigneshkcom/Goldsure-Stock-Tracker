@@ -5393,7 +5393,9 @@ function LedgerView({
 
   // Delete mode: tick rows, then delete the selection in one go.
   const [selecting, setSelecting] = useState(false);
+  // Selected movement ids, so one entry inside a combined row can be picked on its own.
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const ledgerProducts = data.products.filter((product) => product.active);
 
   // Group the visible movements into one card per date. Installs are dated to
@@ -5413,7 +5415,7 @@ function LedgerView({
 
   // Inside a day, movements of the same type, route and reference share one row
   // with a column per product.
-  type LedgerRow = { key: string; sample: Movement; ids: string[]; byProduct: Map<string, number> };
+  type LedgerRow = { key: string; sample: Movement; ids: string[]; items: Movement[]; byProduct: Map<string, number> };
   const rowsFor = (group: { date: string; install: boolean; items: Movement[] }) => {
     const rows = new Map<string, LedgerRow>();
     group.items.forEach((movement) => {
@@ -5429,22 +5431,32 @@ function LedgerView({
         movement.tracking ?? "",
         movement.movement_status ?? "",
       ].join("|");
-      const row = rows.get(key) ?? { key, sample: movement, ids: [], byProduct: new Map<string, number>() };
+      const row = rows.get(key) ?? { key, sample: movement, ids: [], items: [], byProduct: new Map<string, number>() };
       row.ids.push(movement.id);
+      row.items.push(movement);
       row.byProduct.set(movement.product_id, (row.byProduct.get(movement.product_id) ?? 0) + movement.quantity);
       rows.set(key, row);
     });
     return Array.from(rows.values());
   };
   const allRows = movementGroups.flatMap((group) => rowsFor(group));
-  const selectedIds = allRows.filter((row) => selectedKeys.has(row.key)).flatMap((row) => row.ids);
-  const allSelected = allRows.length > 0 && allRows.every((row) => selectedKeys.has(row.key));
+  const allIds = allRows.flatMap((row) => row.ids);
+  const selectedIds = allIds.filter((id) => selectedKeys.has(id));
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedKeys.has(id));
   const stopSelecting = () => {
     setSelecting(false);
     setSelectedKeys(new Set());
   };
-  const toggleRow = (key: string) =>
+  // Tick or untick a whole row (every entry in it) or a single entry.
+  const toggleIds = (ids: string[]) =>
     setSelectedKeys((current) => {
+      const next = new Set(current);
+      const everySelected = ids.every((id) => next.has(id));
+      ids.forEach((id) => (everySelected ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  const toggleExpandedRow = (key: string) =>
+    setExpandedRows((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -5466,7 +5478,7 @@ function LedgerView({
               <button
                 className="secondary-button sm"
                 type="button"
-                onClick={() => setSelectedKeys(allSelected ? new Set() : new Set(allRows.map((row) => row.key)))}
+                onClick={() => setSelectedKeys(allSelected ? new Set() : new Set(allIds))}
               >
                 {allSelected ? "Clear all" : "Select all"}
               </button>
@@ -5571,54 +5583,111 @@ function LedgerView({
                     const reference = [movement.job_number, movement.customer_name, movement.reference]
                       .filter(Boolean)
                       .join(" / ");
+                    const pickedCount = row.ids.filter((id) => selectedKeys.has(id)).length;
+                    const fully = pickedCount === row.ids.length;
+                    const multi = row.ids.length > 1;
+                    const expanded = expandedRows.has(row.key);
                     return (
-                      <tr
-                        key={row.key}
-                        className={selectedKeys.has(row.key) ? "mh-selected" : ""}
-                        onClick={selecting ? () => toggleRow(row.key) : undefined}
-                      >
-                        {selecting ? (
-                          <td className="mh-check">
-                            <input
-                              type="checkbox"
-                              checked={selectedKeys.has(row.key)}
-                              onChange={() => toggleRow(row.key)}
-                              onClick={(event) => event.stopPropagation()}
-                              aria-label="Select this movement"
-                            />
-                          </td>
-                        ) : null}
-                        <td>
-                          <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                            {movementLabels[movement.movement_type]}
-                          </span>
-                          {getMovementCondition(movement) === "faulty" ? <em className="pending-tag">Faulty</em> : null}
-                          {isPendingMovement(movement) ? (
-                            <em className="pending-tag">
-                              In transit · {modeWords[fulfilmentModeOf(movement.reference)].waiting}
-                            </em>
-                          ) : null}
-                          <span className="ledger-route">
-                            {routeText(movement)}
-                            {reference ? (
-                              <>
-                                {" · "}
-                                <LinkifiedCompact value={reference} />
-                              </>
-                            ) : null}
-                            {movement.tracking ? " · " : ""}
-                            <TrackingLink tracking={movement.tracking} />
-                          </span>
-                        </td>
-                        {ledgerProducts.map((product) => {
-                          const value = row.byProduct.get(product.id);
-                          return (
-                            <td className={`mh-num ${value === undefined ? "none" : ""}`} key={product.id}>
-                              {value === undefined ? "—" : value.toLocaleString()}
+                      <Fragment key={row.key}>
+                        <tr
+                          className={pickedCount > 0 ? "mh-selected" : ""}
+                          onClick={selecting ? () => toggleIds(row.ids) : undefined}
+                        >
+                          {selecting ? (
+                            <td className="mh-check">
+                              <input
+                                type="checkbox"
+                                checked={fully}
+                                ref={(element) => {
+                                  if (element) element.indeterminate = pickedCount > 0 && !fully;
+                                }}
+                                onChange={() => toggleIds(row.ids)}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label="Select all entries in this row"
+                              />
                             </td>
-                          );
-                        })}
-                      </tr>
+                          ) : null}
+                          <td>
+                            <span className={`type-chip ${movementTone[movement.movement_type]}`}>
+                              {movementLabels[movement.movement_type]}
+                            </span>
+                            {getMovementCondition(movement) === "faulty" ? <em className="pending-tag">Faulty</em> : null}
+                            {isPendingMovement(movement) ? (
+                              <em className="pending-tag">
+                                In transit · {modeWords[fulfilmentModeOf(movement.reference)].waiting}
+                              </em>
+                            ) : null}
+                            <span className="ledger-route">
+                              {routeText(movement)}
+                              {reference ? (
+                                <>
+                                  {" · "}
+                                  <LinkifiedCompact value={reference} />
+                                </>
+                              ) : null}
+                              {movement.tracking ? " · " : ""}
+                              <TrackingLink tracking={movement.tracking} />
+                            </span>
+                            {multi ? (
+                              <button
+                                type="button"
+                                className="mh-expand"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleExpandedRow(row.key);
+                                }}
+                              >
+                                {expanded ? "Hide" : "Show"} {row.ids.length} entries
+                              </button>
+                            ) : null}
+                          </td>
+                          {ledgerProducts.map((product) => {
+                            const value = row.byProduct.get(product.id);
+                            return (
+                              <td className={`mh-num ${value === undefined ? "none" : ""}`} key={product.id}>
+                                {value === undefined ? "—" : value.toLocaleString()}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {multi && expanded
+                          ? row.items.map((entry) => {
+                              const picked = selectedKeys.has(entry.id);
+                              return (
+                                <tr
+                                  key={entry.id}
+                                  className={`mh-child${picked ? " mh-selected" : ""}`}
+                                  onClick={selecting ? () => toggleIds([entry.id]) : undefined}
+                                >
+                                  {selecting ? (
+                                    <td className="mh-check">
+                                      <input
+                                        type="checkbox"
+                                        checked={picked}
+                                        onChange={() => toggleIds([entry.id])}
+                                        onClick={(event) => event.stopPropagation()}
+                                        aria-label="Select this entry"
+                                      />
+                                    </td>
+                                  ) : null}
+                                  <td>
+                                    <span className="ledger-route">
+                                      {entry.quantity.toLocaleString()} × {productName(entry.product_id)}
+                                    </span>
+                                  </td>
+                                  {ledgerProducts.map((product) => (
+                                    <td
+                                      className={`mh-num ${product.id === entry.product_id ? "" : "none"}`}
+                                      key={product.id}
+                                    >
+                                      {product.id === entry.product_id ? entry.quantity.toLocaleString() : "—"}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            })
+                          : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>
