@@ -17,7 +17,21 @@ export type PickupSlipInput = {
   notes: string;
   logoUrl?: string; // absolute URL so it also works in email
   withFooter?: boolean; // Requested By / Company / Notes block (default true)
+  // The warehouse the stock comes from. Defaults to Specific Freight.
+  warehouse?: { name: string; address?: string | null; phone?: string | null };
 };
+
+// "Name - address Phone: x" for the Warehouse line of a slip.
+export function warehouseLine(input: PickupSlipInput): string {
+  const { freight } = pickupConfig;
+  const warehouse = input.warehouse ?? { name: freight.name, address: freight.address, phone: freight.phone };
+  return [
+    [warehouse.name, warehouse.address].filter(Boolean).join(" - "),
+    warehouse.phone ? `Phone: ${warehouse.phone}` : "",
+  ]
+    .filter(Boolean)
+    .join("  ");
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -110,7 +124,7 @@ export function buildSignatureHtml(logoUrl?: string): string {
 }
 
 export function buildPickupSlipInner(input: PickupSlipInput): string {
-  const { company, freight } = pickupConfig;
+  const { company } = pickupConfig;
   const rows = input.lines.length;
   const logo = input.logoUrl
     ? `<img src="${escapeHtml(input.logoUrl)}" alt="Goldsure" height="48" style="height:48px;width:auto;margin-bottom:14px;" />`
@@ -160,7 +174,7 @@ export function buildPickupSlipInner(input: PickupSlipInput): string {
       </tr>
       <tr>
         <td style="${cell}">Warehouse:</td>
-        <td colspan="6" style="${cell}">${escapeHtml(freight.name)} - ${escapeHtml(freight.address)} Contact: Phone: ${escapeHtml(freight.phone)}</td>
+        <td colspan="6" style="${cell}">${escapeHtml(warehouseLine(input))}</td>
       </tr>
       <tr>
         <th style="${head}">Product Description</th>

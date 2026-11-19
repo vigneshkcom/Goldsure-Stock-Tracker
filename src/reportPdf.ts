@@ -7,6 +7,7 @@ import {
   type PickupSlipInput,
   type StockReportInput,
   type WarehouseReportInput,
+  warehouseLine,
 } from "./pickupSlip";
 import { cartonsForSku, pickupConfig } from "./pickupConfig";
 
@@ -244,7 +245,7 @@ export function buildPackPdfBase64(input: PackRequestInput, logo?: string): stri
 
 // The full Stock Release Request (pickup slip) as a PDF base64 string.
 export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): string {
-  const { company, freight } = pickupConfig;
+  const { company } = pickupConfig;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const yellow: [number, number, number] = [255, 241, 0];
   const grey: [number, number, number] = [243, 244, 246];
@@ -270,7 +271,7 @@ export function buildPickupPdfBase64(input: PickupSlipInput, logo?: string): str
       [{ content: `${company.name.toUpperCase()} - Stock Release Request`, colSpan: 2, styles: { halign: "center", fontStyle: "bold" } }],
       ["Date of Request", { content: input.requestDate, styles: { fillColor: yellow, fontStyle: "bold" } }],
       ["Requested Release Date", { content: input.releaseDate, styles: { fillColor: yellow, fontStyle: "bold" } }],
-      ["Warehouse", `${freight.name} - ${freight.address}  Phone: ${freight.phone}`],
+      ["Warehouse", warehouseLine(input)],
     ] as RowInput[],
   });
 

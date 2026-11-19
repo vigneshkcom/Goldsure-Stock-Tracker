@@ -1707,7 +1707,14 @@ export default function App() {
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
     if (!lines.length) return null;
 
+    const chosenWarehouse = resolveRequestWarehouse();
+    const isFreightWarehouse = !chosenWarehouse || chosenWarehouse.id === defaultRequestWarehouse()?.id;
     const slipInput = {
+      // Other warehouses show their own name and details on the slip.
+      warehouse:
+        chosenWarehouse && !isFreightWarehouse
+          ? { name: chosenWarehouse.name, address: chosenWarehouse.address, phone: chosenWarehouse.phone }
+          : undefined,
       requestDate: formatSlipDate(today()),
       releaseDate: formatSlipDate(pickupReleaseDate),
       recipientName: electrician.name,

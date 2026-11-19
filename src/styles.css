@@ -4675,3 +4675,17 @@ b.el-faulty {
 /* Checkbox row used for "arranged manually" on the Request stock tab. */
 .check-row { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
 .check-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
+
+/* Tighter spacing on the electrician action tabs (Request stock etc.). */
+.el-tabbody { padding: 14px 18px 16px; }
+.el-tabbody .el-intro { margin-bottom: 10px; }
+.el-tabbody .stack-form { gap: 9px; padding: 0; }
+.el-tabbody .stack-form label { gap: 4px; }
+.el-tabbody .stack-form input:not([type="checkbox"]),
+.el-tabbody .stack-form select { min-height: 38px; padding-top: 6px; padding-bottom: 6px; }
+.el-tabbody .stack-form textarea { min-height: 0; padding: 8px 12px; }
+.el-tabbody .seg-field { gap: 4px; }
+.el-tabbody .qty-list { gap: 6px; }
+.el-tabbody .qty-row { padding: 6px 10px; }
+.el-tabbody .qty-row input { min-height: 34px; }
+.el-tabbody .form-actions { margin-top: 2px; }
