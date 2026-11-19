@@ -1175,6 +1175,33 @@ export default function App() {
     }
   }
 
+  // Delete several movements at once (used by the electrician history picker).
+  async function deleteMovements(ids: string[]) {
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} movement${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (usingRemote && supabase) {
+        const { error: deleteError } = await supabase.from("stock_movements").delete().in("id", ids);
+        if (deleteError) throw deleteError;
+        setData((current) =>
+          normalizeData({ ...current, movements: current.movements.filter((movement) => !ids.includes(movement.id)) }),
+        );
+      } else {
+        updateLocal((current) => ({
+          ...current,
+          movements: current.movements.filter((movement) => !ids.includes(movement.id)),
+        }));
+      }
+      setMessage(`${ids.length} movement${ids.length === 1 ? "" : "s"} deleted.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete the movements.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function purgeHolders(ids: string[]) {
     if (!ids.length) return;
     try {
@@ -3273,6 +3300,7 @@ export default function App() {
               }}
               onToggleLossCharged={toggleLossCharged}
               onDeleteMovement={deleteMovement}
+              onDeleteMovements={deleteMovements}
               onDownloadPickupSlip={handleDownloadPickupSlip}
               onSendPickupSlip={openComposePickupSlip}
               pendingPickups={pendingPickups}
@@ -5572,6 +5600,7 @@ function ElectriciansView({
   onDownloadTransferDocket,
   onToggleLossCharged,
   onDeleteMovement,
+  onDeleteMovements,
   onDownloadPickupSlip,
   onSendPickupSlip,
   pendingPickups,
@@ -5646,6 +5675,7 @@ function ElectriciansView({
   onDownloadTransferDocket: () => void;
   onToggleLossCharged: (movement: Movement) => void;
   onDeleteMovement: (movementId: string) => void;
+  onDeleteMovements: (movementIds: string[]) => void;
   onDownloadPickupSlip: () => void;
   onSendPickupSlip: () => void;
   pendingPickups: PendingPickupBatch[];
@@ -5666,6 +5696,9 @@ function ElectriciansView({
   const [swapToId, setSwapToId] = useState("");
   const [swapQty, setSwapQty] = useState("1");
   const [rosterTerm, setRosterTerm] = useState("");
+  // History tab: pick rows with checkboxes, then delete the selection.
+  const [historySelecting, setHistorySelecting] = useState(false);
+  const [historySelected, setHistorySelected] = useState<Set<string>>(new Set());
   const electrician = technicians.find((holder) => holder.id === selectedElectricianId) ?? null;
   const initialsOf = (name: string) =>
     name
@@ -6746,71 +6779,185 @@ function ElectriciansView({
                   ) : null}
 
                   {tab === "history" ? (
-                    <>
-                      <p className="el-intro">{history.length.toLocaleString()} movements for {electrician.name}.</p>
-                      <div className="responsive-table">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Date</th>
-                              <th>Type</th>
-                              <th>Product</th>
-                              <th>In</th>
-                              <th>Out</th>
-                              <th>Reference</th>
-                              <th></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {history.map((movement) => {
-                              const isIn = movement.to_holder_id === electrician.id;
-                              return (
-                                <tr key={movement.id}>
-                                  <td>{formatDate(movement.movement_date)}</td>
-                                  <td>
-                                    <span className={`type-chip ${movementTone[movement.movement_type]}`}>
-                                      {movementLabels[movement.movement_type]}
-                                    </span>
-                                    <span>{conditionLabels[getMovementCondition(movement)]}</span>
-                                  </td>
-                                  <td>{productName(movement.product_id)}</td>
-                                  <td className="qty-in">{isIn ? `+${movement.quantity.toLocaleString()}` : ""}</td>
-                                  <td className="qty-out">{!isIn ? `-${movement.quantity.toLocaleString()}` : ""}</td>
-                                  <td>
-                                    <LinkifiedCompact
-                                      value={[movement.job_number, movement.reference, warehouseName(movement.from_holder_id)]
-                                        .filter(Boolean)
-                                        .join(" / ")}
-                                    />
-                                    {movement.tracking ? " " : ""}
-                                    <TrackingLink tracking={movement.tracking} />
-                                  </td>
-                                  <td className="row-action">
-                                    <button
-                                      className="icon-button danger"
-                                      type="button"
-                                      title="Delete movement"
-                                      aria-label="Delete movement"
-                                      disabled={submitting}
-                                      onClick={() => onDeleteMovement(movement.id)}
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </td>
+                    (() => {
+                      // One row per date / type / condition / direction / reference,
+                      // with a column per product showing the net units.
+                      type HistoryGroup = {
+                        key: string;
+                        date: string;
+                        type: MovementType;
+                        condition: ProductCondition;
+                        isIn: boolean;
+                        ids: string[];
+                        reference: string;
+                        byProduct: Map<string, number>;
+                      };
+                      const groups: HistoryGroup[] = [];
+                      const index = new Map<string, HistoryGroup>();
+                      history.forEach((movement) => {
+                        const isIn = movement.to_holder_id === electrician.id;
+                        const condition = getMovementCondition(movement);
+                        const reference = [movement.job_number, movement.reference].filter(Boolean).join(" / ");
+                        const key = [movement.movement_date, movement.movement_type, condition, isIn ? "in" : "out", reference].join("|");
+                        let group = index.get(key);
+                        if (!group) {
+                          group = {
+                            key,
+                            date: movement.movement_date,
+                            type: movement.movement_type,
+                            condition,
+                            isIn,
+                            ids: [],
+                            reference,
+                            byProduct: new Map(),
+                          };
+                          index.set(key, group);
+                          groups.push(group);
+                        }
+                        group.ids.push(movement.id);
+                        group.byProduct.set(
+                          movement.product_id,
+                          (group.byProduct.get(movement.product_id) ?? 0) + (isIn ? movement.quantity : -movement.quantity),
+                        );
+                      });
+
+                      const selectedIds = groups.filter((group) => historySelected.has(group.key)).flatMap((group) => group.ids);
+                      const stopSelecting = () => {
+                        setHistorySelecting(false);
+                        setHistorySelected(new Set());
+                      };
+                      const toggleGroup = (key: string) =>
+                        setHistorySelected((current) => {
+                          const next = new Set(current);
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        });
+                      const allSelected = groups.length > 0 && groups.every((group) => historySelected.has(group.key));
+
+                      return (
+                        <div className="mh-card">
+                          <div className="mh-head">
+                            <div className="mh-tools">
+                              {historySelecting ? (
+                                <>
+                                  <button
+                                    className="secondary-button sm"
+                                    type="button"
+                                    onClick={() =>
+                                      setHistorySelected(allSelected ? new Set() : new Set(groups.map((group) => group.key)))
+                                    }
+                                  >
+                                    {allSelected ? "Clear all" : "Select all"}
+                                  </button>
+                                  <button className="secondary-button sm" type="button" onClick={stopSelecting}>
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="danger-button sm"
+                                    type="button"
+                                    disabled={!selectedIds.length || submitting}
+                                    onClick={async () => {
+                                      await onDeleteMovements(selectedIds);
+                                      stopSelecting();
+                                    }}
+                                  >
+                                    <Trash2 size={15} />
+                                    Delete selected ({selectedIds.length})
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="secondary-button sm"
+                                    type="button"
+                                    disabled={!groups.length}
+                                    onClick={() => setHistorySelecting(true)}
+                                  >
+                                    <Trash2 size={15} />
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            <div>
+                              <h3>Stock Movement History</h3>
+                              <p>
+                                {electrician.name} · {history.length.toLocaleString()} movements
+                              </p>
+                            </div>
+                            {!historySelecting ? <span className="mh-chip mh-right">Newest first</span> : null}
+                          </div>
+
+                          <div className="responsive-table">
+                            <table className="mh-table">
+                              <thead>
+                                <tr>
+                                  {historySelecting ? <th className="mh-check" /> : null}
+                                  <th>Date</th>
+                                  {activeProducts.map((product) => (
+                                    <th className="mh-num" key={product.id}>
+                                      {product.sku ?? product.name}
+                                    </th>
+                                  ))}
                                 </tr>
-                              );
-                            })}
-                            {history.length === 0 ? (
-                              <tr>
-                                <td colSpan={7} className="muted">
-                                  No movements yet for this electrician.
-                                </td>
-                              </tr>
-                            ) : null}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
+                              </thead>
+                              <tbody>
+                                {groups.map((group) => (
+                                  <tr
+                                    key={group.key}
+                                    className={historySelected.has(group.key) ? "mh-selected" : ""}
+                                    onClick={historySelecting ? () => toggleGroup(group.key) : undefined}
+                                  >
+                                    {historySelecting ? (
+                                      <td className="mh-check">
+                                        <input
+                                          type="checkbox"
+                                          checked={historySelected.has(group.key)}
+                                          onChange={() => toggleGroup(group.key)}
+                                          onClick={(event) => event.stopPropagation()}
+                                          aria-label="Select this movement"
+                                        />
+                                      </td>
+                                    ) : null}
+                                    <td>
+                                      <strong>{formatDate(group.date)}</strong>
+                                      <span className={`mh-type ${group.isIn ? "in" : "out"}`}>
+                                        {movementLabels[group.type]}
+                                        {group.condition === "faulty" ? " · Faulty" : ""}
+                                        {group.reference ? ` · ${group.reference}` : ""}
+                                      </span>
+                                    </td>
+                                    {activeProducts.map((product) => {
+                                      const value = group.byProduct.get(product.id);
+                                      return (
+                                        <td
+                                          className={`mh-num ${value === undefined ? "none" : value > 0 ? "in" : "out"}`}
+                                          key={product.id}
+                                        >
+                                          {value === undefined ? "—" : `${value > 0 ? "+" : ""}${value.toLocaleString()}`}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                                {groups.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={activeProducts.length + 2} className="muted">
+                                      No movements yet for this electrician.
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="mh-legend">
+                            <span className="in">Blue = stock received</span>
+                            <span className="out">Red = stock used</span>
+                          </p>
+                        </div>
+                      );
+                    })()
                   ) : null}
                 </div>
               </section>

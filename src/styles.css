@@ -4689,3 +4689,32 @@ b.el-faulty {
 .el-tabbody .qty-row { padding: 6px 10px; }
 .el-tabbody .qty-row input { min-height: 34px; }
 .el-tabbody .form-actions { margin-top: 2px; }
+
+/* Electrician history: grouped by date, a column per product. */
+.mh-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: #fff; }
+.mh-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.mh-head h3 { margin: 0; font-size: 1.05rem; }
+.mh-head p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+.mh-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mh-chip { background: #f1f2f6; border-radius: 999px; padding: 4px 10px; font-size: 0.75rem; font-weight: 700; }
+.mh-table td, .mh-table th { padding: 10px 12px; }
+.mh-table td strong { display: block; font-size: 0.85rem; }
+.mh-type { display: block; font-size: 0.72rem; font-weight: 600; }
+.mh-type.in { color: #2f5fd0; }
+.mh-type.out { color: #d1485a; }
+.mh-num { text-align: center; font-size: 1.05rem; font-weight: 700; }
+.mh-num.in { color: #2f5fd0; }
+.mh-num.out { color: #d1485a; }
+.mh-num.none { color: #b5b8c4; font-weight: 400; }
+.mh-check { width: 36px; }
+.mh-check input { width: 18px; height: 18px; margin: 0; }
+.mh-table tbody tr.mh-selected { background: #fdeef0; }
+.mh-legend { display: flex; gap: 18px; margin: 12px 0 0; font-size: 0.8rem; color: var(--muted); }
+.mh-legend .in { color: #2f5fd0; }
+.mh-legend .out { color: #d1485a; }
+.danger-button { display: inline-flex; align-items: center; gap: 6px; background: #d1485a; color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+.danger-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.danger-button.sm { padding: 6px 10px; font-size: 0.82rem; }
+.mh-head { align-items: center; }
+.mh-head > div:nth-child(2) { flex: 1; }
+.mh-right { margin-left: auto; }
